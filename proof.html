@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Proof of Work — Agbota Segun</title>
+<meta name="description" content="Real examples of strategy work, creator analysis, client communication and documented progress by Agbota Segun.">
+<link rel="stylesheet" href="/assets/css/styles.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%236d5cff'/%3E%3Ctext x='50' y='68' font-size='48' font-weight='bold' fill='white' text-anchor='middle' font-family='sans-serif'%3EAS%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+<div id="site-nav"></div>
+
+<section class="section-tight" style="padding-top:52px">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">Proof of Work</span>
+      <h1 style="font-size:clamp(2rem,4.4vw,3.1rem)">Proof of Work</h1>
+      <p class="lead">Real examples of strategy work, creator analysis, client communication and documented progress.</p>
+    </div>
+
+    <div class="filter-bar" id="proof-filter"></div>
+    <div id="proof-content"><div class="loading-box"><div class="spinner"></div></div></div>
+  </div>
+</section>
+
+<div class="lightbox" id="lightbox">
+  <button class="lightbox-close" id="lb-close" aria-label="Close">&times;</button>
+  <button class="lightbox-nav lightbox-prev" id="lb-prev" aria-label="Previous">&#8249;</button>
+  <button class="lightbox-nav lightbox-next" id="lb-next" aria-label="Next">&#8250;</button>
+  <div class="lightbox-content">
+    <img id="lb-img" src="" alt="">
+    <div class="lightbox-caption">
+      <h4 id="lb-title"></h4>
+      <p id="lb-caption"></p>
+    </div>
+  </div>
+</div>
+
+<div id="site-footer"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/assets/js/app.js"></script>
+<script>
+(function () {
+  let categories = [], items = [], filtered = [], current = 0, activeCat = 'all';
+  const el = (id) => document.getElementById(id);
+
+  function renderFilters() {
+    el('proof-filter').innerHTML =
+      `<button class="filter-btn ${activeCat === 'all' ? 'active' : ''}" data-cat="all">All <span class="count">${items.length}</span></button>` +
+      categories.map((c) => `<button class="filter-btn ${activeCat === c.key ? 'active' : ''}" data-cat="${c.key}">
+        ${AS.escapeHtml(c.label)} <span class="count">${c.count}</span></button>`).join('');
+
+    el('proof-filter').querySelectorAll('.filter-btn').forEach((b) => {
+      b.addEventListener('click', () => { activeCat = b.dataset.cat; renderFilters(); renderGrid(); });
+    });
+  }
+
+  function renderGrid() {
+    filtered = activeCat === 'all' ? items : items.filter((i) => i.category === activeCat);
+
+    if (!items.length) {
+      el('proof-content').innerHTML = `<div class="empty">
+        <div class="empty-icon">📁</div>
+        <h3>Proof of Work is being added</h3>
+        <p>Agbota Segun uploads genuine screenshots here — client conversations, strategy delivery, channel progress,
+        creator analysis, positive feedback and payout evidence. Nothing on this page is generated or fabricated,
+        so it only shows real material that has actually been supplied.</p>
+        <a href="/contact" class="btn btn-primary" style="margin-top:16px">Ask about previous work</a>
+      </div>`;
+      return;
+    }
+
+    if (!filtered.length) {
+      el('proof-content').innerHTML = `<div class="empty"><div class="empty-icon">🔍</div>
+        <h3>Nothing in this category yet</h3><p>Try another category.</p></div>`;
+      return;
+    }
+
+    el('proof-content').innerHTML = `<div class="proof-grid">${filtered.map((it, i) => `
+      <article class="proof-item" data-index="${i}">
+        <img class="proof-thumb" src="${it.url}" alt="${AS.escapeHtml(it.title)}" loading="lazy">
+        <div class="proof-body">
+          <span class="proof-cat">${AS.escapeHtml(it.categoryLabel)}</span>
+          <h4>${AS.escapeHtml(it.title)}</h4>
+          ${it.caption ? `<p>${AS.escapeHtml(it.caption)}</p>` : ''}
+        </div>
+      </article>`).join('')}</div>`;
+
+    el('proof-content').querySelectorAll('.proof-item').forEach((node) => {
+      node.addEventListener('click', () => openLightbox(parseInt(node.dataset.index, 10)));
+    });
+  }
+
+  function openLightbox(i) {
+    current = i;
+    const it = filtered[i];
+    if (!it) return;
+    el('lb-img').src = it.url;
+    el('lb-img').alt = it.title;
+    el('lb-title').textContent = it.title;
+    el('lb-caption').textContent = it.caption || '';
+    el('lightbox').classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeLightbox() {
+    el('lightbox').classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  const step = (d) => { if (filtered.length) openLightbox((current + d + filtered.length) % filtered.length); };
+
+  document.addEventListener('DOMContentLoaded', () => {
+    AS.boot({ after: async () => {
+      try {
+        const data = await AS.api('/api/proof');
+        categories = data.categories; items = data.items;
+        renderFilters(); renderGrid();
+      } catch (e) {
+        el('proof-content').innerHTML = '<div class="empty"><p>Could not load Proof of Work. Please refresh.</p></div>';
+      }
+    }});
+
+    el('lb-close').addEventListener('click', closeLightbox);
+    el('lb-prev').addEventListener('click', (e) => { e.stopPropagation(); step(-1); });
+    el('lb-next').addEventListener('click', (e) => { e.stopPropagation(); step(1); });
+    el('lightbox').addEventListener('click', (e) => { if (e.target.id === 'lightbox') closeLightbox(); });
+
+    document.addEventListener('keydown', (e) => {
+      if (!el('lightbox').classList.contains('open')) return;
+      if (e.key === 'Escape') closeLightbox();
+      if (e.key === 'ArrowLeft') step(-1);
+      if (e.key === 'ArrowRight') step(1);
+    });
+
+    // mobile swipe
+    let x0 = null;
+    const lb = el('lightbox');
+    lb.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; }, { passive: true });
+    lb.addEventListener('touchend', (e) => {
+      if (x0 === null) return;
+      const dx = e.changedTouches[0].clientX - x0;
+      if (Math.abs(dx) > 55) step(dx > 0 ? -1 : 1);
+      x0 = null;
+    }, { passive: true });
+  });
+})();
+</script>
+</body>
+</html>

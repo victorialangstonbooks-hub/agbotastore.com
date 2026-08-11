@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Checkout — Agbota Segun</title>
+<link rel="stylesheet" href="/assets/css/styles.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%236d5cff'/%3E%3Ctext x='50' y='68' font-size='48' font-weight='bold' fill='white' text-anchor='middle' font-family='sans-serif'%3EAS%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+<div id="site-nav"></div>
+<main class="section-tight" style="padding-top:44px">
+  <div class="container" style="max-width:900px">
+    <div id="checkout"><div class="loading-box"><div class="spinner"></div></div></div>
+  </div>
+</main>
+<div id="site-footer"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/assets/js/app.js"></script>
+<script>
+(function () {
+  const slug = decodeURIComponent(window.location.pathname.split('/').pop());
+  let product = null, order = null, payInfo = null, method = null, proofFile = null;
+
+  const el = (id) => document.getElementById(id);
+
+  function step1() {
+    el('checkout').innerHTML = `
+      <div class="section-head left" style="text-align:left;margin-bottom:26px">
+        <span class="eyebrow">Checkout</span>
+        <h1 style="font-size:clamp(1.7rem,3.6vw,2.3rem)">Confirm your order</h1>
+      </div>
+      <div class="grid" style="grid-template-columns:1.3fr .9fr;gap:26px;align-items:start" id="co-grid">
+        <div class="card">
+          <h3>${AS.escapeHtml(product.name)}</h3>
+          <p style="font-size:.93rem">${AS.escapeHtml(product.tagline || '')}</p>
+          <div class="platform-tags">${(product.platforms||[]).map(p=>`<span class="tag">${AS.escapeHtml(p)}</span>`).join('')}</div>
+          <h4 style="margin:18px 0 10px;font-size:.95rem">What is included</h4>
+          <ul class="feature-list">${(product.includes||[]).map(i=>`<li>${AS.escapeHtml(i)}</li>`).join('')}</ul>
+          <div class="field" style="margin-top:18px">
+            <label for="co-notes">Tell Agbota Segun about your channel (optional)</label>
+            <textarea class="textarea" id="co-notes" maxlength="1200" placeholder="Your channel links, niche, current size, and what you want to achieve."></textarea>
+          </div>
+        </div>
+        <aside class="card">
+          <h4 style="margin:0 0 14px;font-size:.95rem">Order summary</h4>
+          <div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line);font-size:.92rem">
+            <span style="color:var(--text-3)">Strategy</span><strong style="text-align:right">${AS.escapeHtml(product.name)}</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line);font-size:.92rem">
+            <span style="color:var(--text-3)">Price</span><strong>${AS.money(product.price)}</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:14px 0 16px;font-size:1.05rem">
+            <strong>Total</strong><strong style="color:var(--accent)">${AS.money(product.price)}</strong>
+          </div>
+          ${product.priceNote ? `<div class="alert alert-info show" style="font-size:.83rem">${AS.escapeHtml(product.priceNote)}</div>` : ''}
+          <div class="alert" id="co-alert"></div>
+          <button class="btn btn-primary btn-block btn-lg" id="co-create">Create order</button>
+          <p class="hint" style="text-align:center;margin-top:11px">You will choose your payment method next.</p>
+        </aside>
+      </div>`;
+
+    responsive();
+    el('co-create').addEventListener('click', createOrder);
+  }
+
+  function responsive() {
+    const grid = el('co-grid');
+    if (!grid) return;
+    const apply = () => { grid.style.gridTemplateColumns = window.innerWidth < 860 ? '1fr' : '1.3fr .9fr'; };
+    apply(); window.addEventListener('resize', apply);
+  }
+
+  async function createOrder() {
+    const btn = el('co-create');
+    btn.disabled = true; btn.textContent = 'Creating order...';
+    try {
+      const data = await AS.api('/api/orders', {
+        method: 'POST',
+        body: { productSlug: product.slug, notes: el('co-notes').value || null },
+      });
+      order = data.order;
+      AS.toast('Order ' + order.reference + ' created.', 'success', 'Order created');
+      step2();
+    } catch (err) {
+      const a = el('co-alert');
+      a.className = 'alert alert-error show';
+      a.textContent = err.message;
+      btn.disabled = false; btn.textContent = 'Create order';
+    }
+  }
+
+  function step2() {
+    el('checkout').innerHTML = `
+      <div class="section-head left" style="text-align:left;margin-bottom:26px">
+        <span class="eyebrow">Payment</span>
+        <h1 style="font-size:clamp(1.7rem,3.6vw,2.3rem)">Complete your payment</h1>
+        <p style="color:var(--text-3)">Order <strong style="color:var(--text)">${AS.escapeHtml(order.reference)}</strong> · ${AS.escapeHtml(product.name)} · <strong style="color:var(--accent)">${AS.money(order.amount)}</strong></p>
+      </div>
+
+      <div class="card">
+        <h3 style="font-size:1.08rem">1. Choose your payment method</h3>
+        <div class="pay-methods" id="pay-methods">
+          <button type="button" class="pay-method" data-method="bitcoin">
+            <strong>₿ Bitcoin</strong>
+            <small>Pay to the BTC wallet address</small>
+          </button>
+          <button type="button" class="pay-method" data-method="paypal">
+            <strong>🅿️ PayPal</strong>
+            <small>Friends and Family</small>
+          </button>
+        </div>
+
+        <div id="pay-details"></div>
+      </div>`;
+
+    document.querySelectorAll('.pay-method').forEach((b) => {
+      b.addEventListener('click', () => selectMethod(b.dataset.method));
+    });
+  }
+
+  function selectMethod(m) {
+    method = m;
+    document.querySelectorAll('.pay-method').forEach((b) => b.classList.toggle('selected', b.dataset.method === m));
+
+    const info = m === 'bitcoin' ? payInfo.bitcoin : payInfo.paypal;
+    let block = '';
+
+    if (m === 'bitcoin') {
+      block = info.address
+        ? `<div class="field">
+             <label>Bitcoin wallet address — send exactly ${AS.money(order.amount)}</label>
+             <div class="copy-box">
+               <code id="btc-addr">${AS.escapeHtml(info.address)}</code>
+               <button type="button" class="btn btn-sm btn-ghost" id="copy-btc">Copy</button>
+             </div>
+             <p class="hint">${AS.escapeHtml(info.note)}</p>
+           </div>`
+        : `<div class="alert alert-info show">${AS.escapeHtml(info.note)}</div>`;
+    } else {
+      block = `<div class="field">
+             <label>PayPal payment instructions</label>
+             <div class="copy-box">
+               <code id="pp-info">${AS.escapeHtml(info.instructions)}</code>
+               <button type="button" class="btn btn-sm btn-ghost" id="copy-pp">Copy</button>
+             </div>
+             <p class="hint">${AS.escapeHtml(info.note)}</p>
+           </div>`;
+    }
+
+    el('pay-details').innerHTML = `
+      <div style="border-top:1px solid var(--line);margin-top:22px;padding-top:22px">
+        <h3 style="font-size:1.08rem">2. Send the payment</h3>
+        ${block}
+      </div>
+
+      <div style="border-top:1px solid var(--line);margin-top:22px;padding-top:22px">
+        <h3 style="font-size:1.08rem">3. Confirm your payment</h3>
+        <div class="field">
+          <label for="pay-ref">Reference / Transaction ID</label>
+          <input class="input" id="pay-ref" maxlength="400" placeholder="${m === 'bitcoin' ? 'Your BTC transaction ID (TXID)' : 'Your PayPal transaction ID'}">
+          <p class="hint">Paste the transaction ID from your payment so it can be verified.</p>
+        </div>
+
+        <div class="field">
+          <label>Upload Payment Screenshot / Proof</label>
+          <div class="file-drop" id="proof-drop">
+            <input type="file" id="proof-input" accept="image/png,image/jpeg,image/jpg,image/webp,application/pdf">
+            <div id="proof-label">
+              <div style="font-size:1.7rem;margin-bottom:7px">📎</div>
+              <strong style="display:block;font-size:.93rem">Click to upload your payment screenshot</strong>
+              <small style="color:var(--text-3)">PNG, JPG, JPEG, WEBP or PDF</small>
+            </div>
+          </div>
+        </div>
+
+        <div class="alert" id="pay-alert"></div>
+        <button class="btn btn-accent btn-block btn-lg" id="pay-made">PAYMENT MADE</button>
+        <p class="hint" style="text-align:center;margin-top:11px">
+          Agbota Segun is notified immediately and will confirm your payment. You can track this order in your dashboard.
+        </p>
+      </div>`;
+
+    const copyBtc = el('copy-btc');
+    if (copyBtc) copyBtc.addEventListener('click', () => copy(payInfo.bitcoin.address, copyBtc));
+    const copyPp = el('copy-pp');
+    if (copyPp) copyPp.addEventListener('click', () => copy(payInfo.paypal.instructions, copyPp));
+
+    const drop = el('proof-drop');
+    const input = el('proof-input');
+    drop.addEventListener('click', () => input.click());
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('drag'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
+    drop.addEventListener('drop', (e) => {
+      e.preventDefault(); drop.classList.remove('drag');
+      if (e.dataTransfer.files[0]) { input.files = e.dataTransfer.files; setProof(e.dataTransfer.files[0]); }
+    });
+    input.addEventListener('change', () => { if (input.files[0]) setProof(input.files[0]); });
+
+    el('pay-made').addEventListener('click', submitPayment);
+  }
+
+  function setProof(f) {
+    proofFile = f;
+    el('proof-label').innerHTML = `
+      <div style="font-size:1.7rem;margin-bottom:7px">✅</div>
+      <strong style="display:block;font-size:.93rem">${AS.escapeHtml(f.name)}</strong>
+      <small style="color:var(--text-3)">${AS.formatBytes(f.size)} · click to change</small>`;
+  }
+
+  function copy(text, btn) {
+    const done = () => { const t = btn.textContent; btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = t, 1600); };
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(done).catch(fallback);
+    } else fallback();
+    function fallback() {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); done(); } catch (_) {}
+      ta.remove();
+    }
+  }
+
+  async function submitPayment() {
+    const btn = el('pay-made');
+    const a = el('pay-alert');
+    a.className = 'alert';
+    btn.disabled = true; btn.textContent = 'Submitting...';
+    try {
+      const fd = new FormData();
+      fd.append('method', method);
+      const ref = el('pay-ref').value.trim();
+      if (ref) fd.append('reference', ref);
+      if (proofFile) fd.append('proof', proofFile);
+
+      const data = await AS.api(`/api/orders/${order.id}/payment`, { method: 'POST', body: fd });
+      order = data.order;
+      done();
+    } catch (err) {
+      a.className = 'alert alert-error show';
+      a.textContent = err.message;
+      btn.disabled = false; btn.textContent = 'PAYMENT MADE';
+    }
+  }
+
+  function done() {
+    el('checkout').innerHTML = `
+      <div class="card" style="text-align:center;padding:44px 26px">
+        <div style="font-size:3rem;margin-bottom:14px">🎉</div>
+        <h2 style="font-size:1.6rem">Payment submitted</h2>
+        <p class="lead" style="max-width:520px;margin:0 auto 22px">
+          Your payment for order <strong style="color:var(--text)">${AS.escapeHtml(order.reference)}</strong> has been submitted
+          and Agbota Segun has been notified. You will receive a notification the moment it is confirmed.
+        </p>
+        <div style="display:flex;gap:11px;justify-content:center;flex-wrap:wrap">
+          <a href="/dashboard" class="btn btn-primary btn-lg">View my orders</a>
+          <a href="/chat" class="btn btn-ghost btn-lg">Message Agbota Segun</a>
+          <a href="/" class="btn btn-ghost btn-lg">Back to website</a>
+        </div>
+      </div>`;
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    AS.boot({ after: async () => {
+      const user = await AS.requireAuth('/checkout/' + slug);
+      if (!user) return;
+      try {
+        const [pd, pi] = await Promise.all([
+          AS.api('/api/products/' + encodeURIComponent(slug)),
+          AS.api('/api/orders/meta/payment-info'),
+        ]);
+        product = pd.product; payInfo = pi;
+        step1();
+      } catch (e) {
+        el('checkout').innerHTML = `<div class="empty"><div class="empty-icon">🔍</div><h3>Strategy not found</h3>
+          <a href="/strategies" class="btn btn-primary" style="margin-top:14px">View strategies</a></div>`;
+      }
+    }});
+  });
+})();
+</script>
+</body>
+</html>

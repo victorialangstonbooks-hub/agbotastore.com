@@ -1,0 +1,57 @@
+# ---------------------------------------------------------------
+# Agbota Segun — Render Blueprint
+# Creates the web service + a persistent PostgreSQL database.
+# ---------------------------------------------------------------
+databases:
+  - name: agbota-segun-db
+    databaseName: agbota_segun
+    user: agbota_segun
+    plan: free
+
+services:
+  - type: web
+    name: agbota-segun
+    runtime: node
+    plan: free
+    region: oregon
+    branch: main
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # Injected automatically from the database above.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: agbota-segun-db
+          property: connectionString
+
+      # Generated once by Render and kept stable across deploys.
+      - key: JWT_SECRET
+        generateValue: true
+
+      - key: ADMIN_EMAIL
+        value: agbotasegun.outreach@gmail.com
+
+      - key: ADMIN_NAME
+        value: Agbota Segun
+
+      # SET THIS IN THE RENDER DASHBOARD — never commit a real password.
+      - key: ADMIN_PASSWORD
+        sync: false
+
+      # SET THIS IN THE RENDER DASHBOARD — your real BTC wallet address.
+      - key: BTC_ADDRESS
+        sync: false
+
+      - key: PAYPAL_INSTRUCTIONS
+        value: "Pay through PayPal Friends and Family. PayPal email: Ajayiawwl100@gmail.com"
+
+      - key: MAX_UPLOAD_MB
+        value: "10"
+
+      - key: PGSSL
+        value: "true"

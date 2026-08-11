@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Chat — Agbota Segun</title>
+<link rel="stylesheet" href="/assets/css/styles.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%236d5cff'/%3E%3Ctext x='50' y='68' font-size='48' font-weight='bold' fill='white' text-anchor='middle' font-family='sans-serif'%3EAS%3C/text%3E%3C/svg%3E">
+<style>body { overflow: hidden; }</style>
+</head>
+<body>
+<div id="site-nav"></div>
+
+<div class="chat-shell" id="chat-shell">
+  <!-- sidebar -->
+  <aside class="chat-sidebar">
+    <div class="chat-sidebar-head">
+      <h2>Messages</h2>
+      <div class="chat-filters">
+        <button class="chat-filter active" data-filter="all">All</button>
+        <button class="chat-filter" data-filter="unread">🔴 Unread <span id="unread-total"></span></button>
+      </div>
+    </div>
+    <div class="conversation-list" id="conversation-list">
+      <div class="loading-box"><div class="spinner"></div></div>
+    </div>
+  </aside>
+
+  <!-- main -->
+  <section class="chat-main" id="chat-main">
+    <div class="chat-header">
+      <button class="composer-btn chat-back" id="chat-back" aria-label="Back">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      </button>
+      <div class="avatar" id="chat-avatar">AS</div>
+      <div style="flex:1;min-width:0">
+        <h3 id="chat-title">Agbota Segun</h3>
+        <div class="status" id="chat-status"><span class="dot off"></span>Connecting...</div>
+      </div>
+    </div>
+
+    <div class="chat-messages" id="chat-messages">
+      <div class="loading-box"><div class="spinner"></div></div>
+    </div>
+
+    <div class="chat-composer">
+      <div class="attach-preview" id="attach-preview"></div>
+      <div class="recording-bar" id="recording-bar">
+        <span class="rec-dot"></span>
+        <span class="rec-time" id="rec-time">0:00</span>
+        <span style="color:var(--text-3);font-size:.86rem;flex:1">Recording voice message...</span>
+        <button class="btn btn-sm btn-ghost" id="rec-cancel">Cancel</button>
+        <button class="btn btn-sm btn-accent" id="rec-stop">Stop &amp; attach</button>
+      </div>
+      <div class="composer-row">
+        <input type="file" id="file-input" style="display:none"
+               accept="image/png,image/jpeg,image/jpg,image/webp,image/gif,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip">
+        <button class="composer-btn" id="attach-btn" title="Attach file" aria-label="Attach file">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+          </svg>
+        </button>
+        <button class="composer-btn" id="mic-btn" title="Record voice message" aria-label="Record voice message">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+          </svg>
+        </button>
+        <textarea class="composer-input" id="composer" rows="1" placeholder="Write a message..." maxlength="5000"></textarea>
+        <button class="composer-btn send" id="send-btn" title="Send" aria-label="Send message">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="lightbox" id="lightbox">
+  <button class="lightbox-close" id="lb-close">&times;</button>
+  <div class="lightbox-content"><img id="lb-img" src="" alt=""></div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/assets/js/app.js"></script>
+<script>
+(function () {
+  let me = null, socket = null;
+  let conversations = [], activeId = null, filter = 'all';
+  let pendingFile = null, oldestId = null, loadingOlder = false;
+  let mediaRecorder = null, chunks = [], recTimer = null, recStart = 0, recStream = null;
+
+  const el = (id) => document.getElementById(id);
+  const messagesEl = () => el('chat-messages');
+
+  /* ---------- rendering ---------- */
+  function renderConversations() {
+    const list = el('conversation-list');
+    let items = conversations;
+    if (filter === 'unread') items = items.filter((c) => c.unread > 0);
+
+    const total = conversations.reduce((s, c) => s + (c.unread || 0), 0);
+    el('unread-total').textContent = total > 0 ? '(' + total + ')' : '';
+
+    if (!items.length) {
+      list.innerHTML = `<div class="empty" style="padding:34px 18px">
+        <p>${filter === 'unread' ? 'No unread messages.' : (me.role === 'owner' ? 'No conversations yet.' : 'Start the conversation below.')}</p>
+      </div>`;
+      return;
+    }
+
+    list.innerHTML = items.map((c) => `
+      <div class="conversation-item ${c.id === activeId ? 'active' : ''}" data-id="${c.id}">
+        <div class="avatar">${AS.escapeHtml(AS.initials(c.userName))}</div>
+        <div class="conversation-meta">
+          <div class="row">
+            <strong>${AS.escapeHtml(c.userName)}</strong>
+            ${c.lastMessageAt ? `<time>${AS.timeAgo(c.lastMessageAt)}</time>` : ''}
+          </div>
+          <p>${AS.escapeHtml(c.lastMessagePreview || 'No messages yet')}</p>
+        </div>
+        ${c.unread > 0 ? `<span class="badge-count">${c.unread}</span>` : ''}
+      </div>`).join('');
+
+    list.querySelectorAll('.conversation-item').forEach((item) => {
+      item.addEventListener('click', () => openConversation(parseInt(item.dataset.id, 10)));
+    });
+  }
+
+  function messageHtml(m) {
+    const mine = String(m.senderId) === String(me.id);
+    let inner = '';
+
+    (m.attachments || []).forEach((a) => {
+      if (a.kind === 'image') {
+        inner += `<img class="msg-image" src="${a.url}" alt="${AS.escapeHtml(a.filename)}" loading="lazy" data-lightbox="${a.url}">`;
+      } else if (a.kind === 'voice') {
+        inner += `<div class="msg-bubble msg-audio"><audio controls preload="metadata" src="${a.url}"></audio></div>`;
+      } else {
+        inner += `<a class="msg-file" href="${a.url}" target="_blank" rel="noopener">
+            <span class="ico">📄</span>
+            <span class="info"><strong>${AS.escapeHtml(a.filename)}</strong><small>${AS.formatBytes(a.sizeBytes)}</small></span>
+          </a>`;
+      }
+    });
+
+    if (m.body) inner += `<div class="msg-bubble">${AS.escapeHtml(m.body)}</div>`;
+
+    return `<div class="msg ${mine ? 'mine' : 'theirs'}" data-id="${m.id}">
+        ${inner}
+        <div class="msg-meta">
+          <span>${mine ? 'You' : AS.escapeHtml(m.senderName)}</span>
+          <span>·</span>
+          <span>${AS.formatTime(m.createdAt)}</span>
+        </div>
+      </div>`;
+  }
+
+  function dayLabel(iso) {
+    const d = new Date(iso), t = new Date();
+    const y = new Date(t.getTime() - 86400000);
+    if (d.toDateString() === t.toDateString()) return 'Today';
+    if (d.toDateString() === y.toDateString()) return 'Yesterday';
+    return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  }
+
+  function renderMessages(messages, { prepend = false } = {}) {
+    const box = messagesEl();
+    let html = '', lastDay = null;
+
+    if (!prepend && !messages.length) {
+      box.innerHTML = `<div class="empty" style="margin:auto">
+        <div class="empty-icon">💬</div>
+        <h3>No messages yet</h3>
+        <p>${me.role === 'owner' ? 'Messages from this streamer will appear here.' : 'Send your first message to Agbota Segun below. Ask anything about the strategies, your channel or your order.'}</p>
+      </div>`;
+      return;
+    }
+
+    if (prepend) {
+      const first = box.querySelector('.day-divider');
+      if (first) lastDay = null;
+    }
+
+    messages.forEach((m) => {
+      const d = dayLabel(m.createdAt);
+      if (d !== lastDay) { html += `<div class="day-divider">${d}</div>`; lastDay = d; }
+      html += messageHtml(m);
+    });
+
+    if (prepend) {
+      const prevH = box.scrollHeight, prevTop = box.scrollTop;
+      box.insertAdjacentHTML('afterbegin', html);
+      box.scrollTop = box.scrollHeight - prevH + prevTop;
+    } else {
+      box.innerHTML = html;
+      scrollToBottom();
+    }
+    bindLightbox();
+  }
+
+  function appendMessage(m) {
+    const box = messagesEl();
+    const emptyEl = box.querySelector('.empty');
+    if (emptyEl) box.innerHTML = '';
+    if (box.querySelector(`.msg[data-id="${m.id}"]`)) return;
+
+    const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 140;
+    const dividers = box.querySelectorAll('.day-divider');
+    const lastDay = dividers.length ? dividers[dividers.length - 1].textContent : null;
+    const d = dayLabel(m.createdAt);
+    let html = '';
+    if (d !== lastDay) html += `<div class="day-divider">${d}</div>`;
+    html += messageHtml(m);
+    box.insertAdjacentHTML('beforeend', html);
+    bindLightbox();
+    if (nearBottom || String(m.senderId) === String(me.id)) scrollToBottom();
+  }
+
+  function scrollToBottom() {
+    const box = messagesEl();
+    requestAnimationFrame(() => { box.scrollTop = box.scrollHeight; });
+  }
+
+  function bindLightbox() {
+    document.querySelectorAll('.msg-image[data-lightbox]').forEach((img) => {
+      if (img.dataset.bound) return;
+      img.dataset.bound = '1';
+      img.addEventListener('click', () => {
+        el('lb-img').src = img.dataset.lightbox;
+        el('lightbox').classList.add('open');
+      });
+    });
+  }
+
+  /* ---------- data ---------- */
+  async function loadConversations() {
+    try {
+      const data = await AS.api('/api/messages/conversations');
+      conversations = data.conversations;
+      renderConversations();
+      return conversations;
+    } catch (e) { return []; }
+  }
+
+  async function openConversation(id) {
+    activeId = id;
+    document.querySelector('.chat-shell').classList.add('viewing');
+    renderConversations();
+
+    const convo = conversations.find((c) => c.id === id);
+    if (convo) {
+      el('chat-title').textContent = me.role === 'owner' ? convo.userName : 'Agbota Segun';
+      el('chat-avatar').textContent = me.role === 'owner' ? AS.initials(convo.userName) : 'AS';
+    }
+
+    messagesEl().innerHTML = '<div class="loading-box"><div class="spinner"></div></div>';
+
+    try {
+      const data = await AS.api('/api/messages/' + id);
+      oldestId = data.messages.length ? data.messages[0].id : null;
+      renderMessages(data.messages);
+
+      await AS.api(`/api/messages/${id}/read`, { method: 'POST' });
+      const c = conversations.find((x) => x.id === id);
+      if (c) c.unread = 0;
+      renderConversations();
+      AS.refreshChatBadge();
+
+      if (socket) socket.emit('conversation:join', { conversationId: id }, () => {});
+    } catch (err) {
+      messagesEl().innerHTML = `<div class="empty"><p>${AS.escapeHtml(err.message)}</p></div>`;
+    }
+  }
+
+  async function loadOlder() {
+    if (loadingOlder || !oldestId || !activeId) return;
+    loadingOlder = true;
+    try {
+      const data = await AS.api(`/api/messages/${activeId}?before=${oldestId}&limit=30`);
+      if (data.messages.length) {
+        oldestId = data.messages[0].id;
+        renderMessages(data.messages, { prepend: true });
+      }
+    } catch (_) {} finally { loadingOlder = false; }
+  }
+
+  /* ---------- sending ---------- */
+  async function send() {
+    const input = el('composer');
+    const body = input.value.trim();
+    if (!body && !pendingFile) return;
+    if (!activeId) { AS.toast('Select a conversation first.', 'error'); return; }
+
+    const btn = el('send-btn');
+    btn.disabled = true;
+
+    try {
+      const fd = new FormData();
+      fd.append('conversationId', activeId);
+      if (body) fd.append('body', body);
+      if (pendingFile) {
+        fd.append('file', pendingFile.file, pendingFile.file.name);
+        if (pendingFile.durationMs) fd.append('durationMs', pendingFile.durationMs);
+      }
+      const data = await AS.api('/api/messages', { method: 'POST', body: fd });
+      input.value = '';
+      input.style.height = 'auto';
+      clearAttachment();
+      appendMessage(data.message);
+      loadConversations();
+    } catch (err) {
+      AS.toast(err.message, 'error', 'Could not send');
+    } finally {
+      btn.disabled = false;
+      input.focus();
+    }
+  }
+
+  function setAttachment(file, durationMs) {
+    pendingFile = { file, durationMs };
+    const p = el('attach-preview');
+    const isImg = file.type.startsWith('image/');
+    const isAudio = file.type.startsWith('audio/');
+    p.innerHTML = `
+      ${isImg ? `<img src="${URL.createObjectURL(file)}" alt="">` : `<span style="font-size:1.5rem">${isAudio ? '🎤' : '📄'}</span>`}
+      <div class="info">
+        <strong>${AS.escapeHtml(isAudio ? 'Voice message' : file.name)}</strong>
+        <small>${AS.formatBytes(file.size)}${durationMs ? ' · ' + Math.round(durationMs / 1000) + 's' : ''}</small>
+      </div>
+      <button class="btn btn-sm btn-ghost" id="attach-remove">Remove</button>`;
+    p.classList.add('show');
+    el('attach-remove').addEventListener('click', clearAttachment);
+  }
+
+  function clearAttachment() {
+    pendingFile = null;
+    el('attach-preview').classList.remove('show');
+    el('attach-preview').innerHTML = '';
+    el('file-input').value = '';
+  }
+
+  /* ---------- voice recording ---------- */
+  function pickMime() {
+    if (typeof MediaRecorder === 'undefined') return null;
+    const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4', 'audio/aac'];
+    for (const c of candidates) {
+      if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(c)) return c;
+    }
+    return '';
+  }
+
+  async function startRecording() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      AS.toast('Voice recording is not supported by this browser.', 'error');
+      return;
+    }
+    if (typeof MediaRecorder === 'undefined') {
+      AS.toast('Voice recording is not supported by this browser.', 'error');
+      return;
+    }
+    try {
+      recStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      AS.toast('Microphone permission was denied. Please allow microphone access to record a voice message.', 'error');
+      return;
+    }
+
+    const mime = pickMime();
+    try {
+      mediaRecorder = mime ? new MediaRecorder(recStream, { mimeType: mime }) : new MediaRecorder(recStream);
+    } catch (_) {
+      mediaRecorder = new MediaRecorder(recStream);
+    }
+
+    chunks = [];
+    mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    mediaRecorder.onstop = () => {
+      stopStream();
+      const type = (mediaRecorder && mediaRecorder.mimeType) || 'audio/webm';
+      const blob = new Blob(chunks, { type });
+      const durationMs = Date.now() - recStart;
+      if (blob.size > 0 && !mediaRecorder._cancelled) {
+        const ext = type.includes('ogg') ? 'ogg' : type.includes('mp4') ? 'm4a' : type.includes('aac') ? 'aac' : 'webm';
+        const file = new File([blob], `voice-message-${Date.now()}.${ext}`, { type: type.split(';')[0] });
+        setAttachment(file, durationMs);
+      }
+      chunks = [];
+    };
+
+    mediaRecorder._cancelled = false;
+    mediaRecorder.start();
+    recStart = Date.now();
+    el('recording-bar').classList.add('show');
+    el('mic-btn').classList.add('recording');
+    recTimer = setInterval(() => {
+      const s = Math.floor((Date.now() - recStart) / 1000);
+      el('rec-time').textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+      if (s >= 300) stopRecording(); // 5 minute cap
+    }, 250);
+  }
+
+  function stopStream() {
+    if (recStream) { recStream.getTracks().forEach((t) => t.stop()); recStream = null; }
+    clearInterval(recTimer);
+    el('recording-bar').classList.remove('show');
+    el('mic-btn').classList.remove('recording');
+    el('rec-time').textContent = '0:00';
+  }
+
+  function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+    else stopStream();
+  }
+
+  function cancelRecording() {
+    if (mediaRecorder) {
+      mediaRecorder._cancelled = true;
+      if (mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+    }
+    stopStream();
+  }
+
+  /* ---------- socket ---------- */
+  function initSocket() {
+    socket = AS.connectSocket();
+    if (!socket) return;
+
+    const setStatus = (on) => {
+      el('chat-status').innerHTML = `<span class="dot ${on ? '' : 'off'}"></span>${on ? 'Connected' : 'Reconnecting...'}`;
+    };
+    setStatus(socket.connected);
+    socket.on('connect', () => { setStatus(true); if (activeId) socket.emit('conversation:join', { conversationId: activeId }, () => {}); });
+    socket.on('disconnect', () => setStatus(false));
+
+    socket.on('message', (m) => {
+      if (m.conversationId === activeId) {
+        appendMessage(m);
+        if (String(m.senderId) !== String(me.id)) {
+          AS.api(`/api/messages/${activeId}/read`, { method: 'POST' }).catch(() => {});
+        }
+      }
+      loadConversations();
+      AS.refreshChatBadge();
+    });
+
+    socket.on('inbox:update', () => { loadConversations(); });
+  }
+
+  /* ---------- init ---------- */
+  document.addEventListener('DOMContentLoaded', () => {
+    AS.boot({ after: async () => {
+      me = await AS.requireAuth('/chat');
+      if (!me) return;
+
+      initSocket();
+      const list = await loadConversations();
+
+      if (me.role === 'streamer' && list.length) {
+        openConversation(list[0].id);
+      } else if (list.length) {
+        document.querySelector('.chat-shell').classList.remove('viewing');
+        messagesEl().innerHTML = `<div class="empty" style="margin:auto">
+          <div class="empty-icon">📥</div><h3>Select a conversation</h3>
+          <p>Choose a streamer from the list to open the conversation.</p></div>`;
+      } else {
+        messagesEl().innerHTML = `<div class="empty" style="margin:auto">
+          <div class="empty-icon">📥</div><h3>No conversations yet</h3>
+          <p>When a streamer messages you it will appear here.</p></div>`;
+      }
+    }});
+
+    // composer
+    const composer = el('composer');
+    composer.addEventListener('input', () => {
+      composer.style.height = 'auto';
+      composer.style.height = Math.min(composer.scrollHeight, 140) + 'px';
+    });
+    composer.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+    });
+    el('send-btn').addEventListener('click', send);
+
+    el('attach-btn').addEventListener('click', () => el('file-input').click());
+    el('file-input').addEventListener('change', (e) => {
+      const f = e.target.files[0];
+      if (f) setAttachment(f);
+    });
+
+    el('mic-btn').addEventListener('click', () => {
+      if (mediaRecorder && mediaRecorder.state === 'recording') stopRecording();
+      else startRecording();
+    });
+    el('rec-stop').addEventListener('click', stopRecording);
+    el('rec-cancel').addEventListener('click', cancelRecording);
+
+    el('chat-back').addEventListener('click', () => {
+      document.querySelector('.chat-shell').classList.remove('viewing');
+    });
+
+    document.querySelectorAll('.chat-filter').forEach((b) => {
+      b.addEventListener('click', () => {
+        document.querySelectorAll('.chat-filter').forEach((x) => x.classList.remove('active'));
+        b.classList.add('active');
+        filter = b.dataset.filter;
+        renderConversations();
+      });
+    });
+
+    // infinite scroll upward for older messages
+    messagesEl().addEventListener('scroll', () => {
+      if (messagesEl().scrollTop < 60) loadOlder();
+    });
+
+    el('lb-close').addEventListener('click', () => el('lightbox').classList.remove('open'));
+    el('lightbox').addEventListener('click', (e) => {
+      if (e.target.id === 'lightbox') el('lightbox').classList.remove('open');
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') el('lightbox').classList.remove('open');
+    });
+  });
+})();
+</script>
+</body>
+</html>

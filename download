@@ -1,0 +1,22 @@
+node_modules/
+.env
+.env.local
+.env.*.local
+npm-debug.log*
+yarn-error.log*
+.DS_Store
+tmp/
+shots/
+coverage/
+
+# local tooling / caches (never belong in the repo)
+.cache/
+.npm/
+.sudo_as_admin_successful
+*.tmp.js
+
+# browser/tool artifacts
+.local/
+.pki/
+.config/
+.mozilla/

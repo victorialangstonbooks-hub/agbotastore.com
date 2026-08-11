@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dashboard — Agbota Segun</title>
+<link rel="stylesheet" href="/assets/css/styles.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%236d5cff'/%3E%3Ctext x='50' y='68' font-size='48' font-weight='bold' fill='white' text-anchor='middle' font-family='sans-serif'%3EAS%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+<div id="site-nav"></div>
+
+<main class="section-tight" style="padding-top:40px;min-height:70vh">
+  <div class="container">
+    <div style="margin-bottom:26px">
+      <h1 style="font-size:clamp(1.6rem,3.4vw,2.2rem);margin-bottom:4px">My Dashboard</h1>
+      <p style="color:var(--text-3);margin:0" id="dash-welcome"></p>
+    </div>
+
+    <div class="dash-shell">
+      <nav class="dash-nav" id="dash-nav">
+        <button class="active" data-panel="overview">📊 Overview</button>
+        <button data-panel="orders">🧾 My Orders</button>
+        <button data-panel="payment">💳 Payment</button>
+        <button data-panel="notifications">🔔 Notifications</button>
+        <button data-panel="profile">👤 Profile</button>
+      </nav>
+
+      <div>
+        <div class="tab-panel active" id="panel-overview"><div class="loading-box"><div class="spinner"></div></div></div>
+        <div class="tab-panel" id="panel-orders"><div class="loading-box"><div class="spinner"></div></div></div>
+        <div class="tab-panel" id="panel-payment"></div>
+        <div class="tab-panel" id="panel-notifications"></div>
+        <div class="tab-panel" id="panel-profile"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- review modal -->
+<div class="modal" id="review-modal">
+  <div class="modal-box">
+    <div class="modal-head"><h3>Leave a review</h3><button class="close-x" id="rv-close">&times;</button></div>
+    <div class="modal-body">
+      <p style="font-size:.9rem">Your review will be shown publicly with your name and the strategy you ordered.</p>
+      <div class="field">
+        <label>Your rating</label>
+        <div class="star-rating" id="rv-stars">
+          ${''}
+        </div>
+      </div>
+      <div class="field">
+        <label for="rv-body">Your review (optional)</label>
+        <textarea class="textarea" id="rv-body" maxlength="2000" placeholder="How was the strategy and the process?"></textarea>
+      </div>
+      <div class="alert" id="rv-alert"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="rv-cancel">Cancel</button>
+      <button class="btn btn-primary" id="rv-submit">Submit review</button>
+    </div>
+  </div>
+</div>
+
+<div id="site-footer"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/assets/js/app.js"></script>
+<script>
+(function () {
+  let me = null, orders = [], payInfo = null, reviewOrderId = null, reviewRating = 5;
+  const el = (id) => document.getElementById(id);
+
+  const pillClass = (s) => ({
+    pending_payment: 'pill-pending', payment_submitted: 'pill-submitted', payment_confirmed: 'pill-confirmed',
+    in_progress: 'pill-progress', delivered: 'pill-delivered', completed: 'pill-completed', cancelled: 'pill-cancelled',
+  }[s] || 'pill-pending');
+
+  /* ---------- overview ---------- */
+  function renderOverview() {
+    const active = orders.filter((o) => !['completed', 'cancelled'].includes(o.status)).length;
+    const completed = orders.filter((o) => o.status === 'completed').length;
+    const spent = orders.filter((o) => o.paymentStatus === 'confirmed').reduce((s, o) => s + o.amount, 0);
+
+    el('panel-overview').innerHTML = `
+      <div class="grid grid-4" style="margin-bottom:26px">
+        <div class="stat-card"><div class="v">${orders.length}</div><div class="l">Total orders</div></div>
+        <div class="stat-card"><div class="v">${active}</div><div class="l">Active orders</div></div>
+        <div class="stat-card"><div class="v">${completed}</div><div class="l">Completed</div></div>
+        <div class="stat-card"><div class="v">${AS.money(spent)}</div><div class="l">Confirmed spend</div></div>
+      </div>
+
+      <div class="grid grid-2">
+        <div class="card">
+          <h3>Recent orders</h3>
+          ${orders.length ? orders.slice(0, 3).map((o) => `
+            <div style="display:flex;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid var(--line)">
+              <div style="min-width:0">
+                <strong style="display:block;font-size:.92rem">${AS.escapeHtml(o.items[0] ? o.items[0].name : 'Order')}</strong>
+                <small class="order-ref">${AS.escapeHtml(o.reference)}</small>
+              </div>
+              <span class="pill ${pillClass(o.status)}">${AS.escapeHtml(o.statusLabel)}</span>
+            </div>`).join('') + `<button class="btn btn-ghost btn-block btn-sm" style="margin-top:14px" data-goto="orders">View all orders</button>`
+            : `<div class="empty" style="padding:26px 10px"><p>No orders yet.</p><a href="/strategies" class="btn btn-primary btn-sm" style="margin-top:12px">Browse strategies</a></div>`}
+        </div>
+        <div class="card">
+          <h3>Quick actions</h3>
+          <div style="display:grid;gap:9px;margin-top:14px">
+            <a href="/strategies" class="btn btn-primary btn-block">Browse strategies</a>
+            <a href="/chat" class="btn btn-ghost btn-block">💬 Message Agbota Segun</a>
+            <a href="/proof-of-work" class="btn btn-ghost btn-block">View Proof of Work</a>
+            <a href="/" class="btn btn-ghost btn-block">Back to the website</a>
+          </div>
+        </div>
+      </div>`;
+
+    const goto = el('panel-overview').querySelector('[data-goto]');
+    if (goto) goto.addEventListener('click', () => switchPanel('orders'));
+  }
+
+  /* ---------- orders ---------- */
+  function renderOrders() {
+    if (!orders.length) {
+      el('panel-orders').innerHTML = `<div class="empty">
+        <div class="empty-icon">🧾</div><h3>No orders yet</h3>
+        <p>When you purchase a strategy it will appear here with its full status, payment history and payment proof.</p>
+        <a href="/strategies" class="btn btn-primary" style="margin-top:16px">Browse strategies</a></div>`;
+      return;
+    }
+
+    el('panel-orders').innerHTML = orders.map((o) => {
+      const lastPay = o.payments && o.payments[0];
+      return `
+      <div class="order-card" id="order-${o.id}">
+        <div class="order-head">
+          <div>
+            <h3 style="font-size:1.08rem;margin-bottom:3px">${AS.escapeHtml(o.items[0] ? o.items[0].name : 'Strategy order')}</h3>
+            <span class="order-ref">${AS.escapeHtml(o.reference)} · ${AS.formatDate(o.createdAt)}</span>
+          </div>
+          <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center">
+            <span class="pill ${pillClass(o.status)}">${AS.escapeHtml(o.statusLabel)}</span>
+            <strong style="font-size:1.15rem">${AS.money(o.amount)}</strong>
+          </div>
+        </div>
+
+        ${o.paymentStatus === 'confirmed' ? `<div class="alert alert-success show" style="margin-bottom:13px">✅ PAYMENT CONFIRMED</div>` : ''}
+        ${o.paymentStatus === 'submitted' ? `<div class="alert alert-info show" style="margin-bottom:13px">⏳ Payment submitted — awaiting confirmation from Agbota Segun.</div>` : ''}
+        ${o.paymentStatus === 'rejected' ? `<div class="alert alert-error show" style="margin-bottom:13px">Your payment could not be verified. Please message Agbota Segun in Chat.</div>` : ''}
+        ${o.deliveryNote ? `<div class="alert alert-info show" style="margin-bottom:13px"><strong>Delivery note:</strong> ${AS.escapeHtml(o.deliveryNote)}</div>` : ''}
+
+        <div class="order-meta">
+          <div><span>Payment method</span><strong>${o.paymentMethod ? (o.paymentMethod === 'bitcoin' ? '₿ Bitcoin' : '🅿️ PayPal') : '—'}</strong></div>
+          <div><span>Payment status</span><strong>${AS.escapeHtml(o.paymentStatus)}</strong></div>
+          <div><span>Order status</span><strong>${AS.escapeHtml(o.statusLabel)}</strong></div>
+          <div><span>Payment proof</span><strong>${lastPay && lastPay.proofFileId ? `<a href="/api/files/${lastPay.proofFileId}" target="_blank" rel="noopener" style="color:var(--brand-2)">View proof</a>` : '—'}</strong></div>
+        </div>
+
+        <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:15px">
+          ${o.paymentStatus === 'pending' || o.paymentStatus === 'rejected'
+            ? `<button class="btn btn-accent btn-sm" data-pay="${o.id}">Submit payment</button>` : ''}
+          ${o.canReview ? `<button class="btn btn-primary btn-sm" data-review="${o.id}">⭐ Leave a review</button>` : ''}
+          ${o.review ? `<span class="pill pill-completed">Reviewed ${'★'.repeat(o.review.rating)}</span>` : ''}
+          <a href="/chat" class="btn btn-ghost btn-sm">Message about this order</a>
+        </div>
+      </div>`;
+    }).join('');
+
+    el('panel-orders').querySelectorAll('[data-pay]').forEach((b) => {
+      b.addEventListener('click', () => openPayment(parseInt(b.dataset.pay, 10)));
+    });
+    el('panel-orders').querySelectorAll('[data-review]').forEach((b) => {
+      b.addEventListener('click', () => openReview(parseInt(b.dataset.review, 10)));
+    });
+  }
+
+  /* ---------- payment ---------- */
+  function openPayment(orderId) {
+    switchPanel('payment');
+    renderPayment(orderId);
+  }
+
+  function renderPayment(preselectId) {
+    const payable = orders.filter((o) => ['pending', 'rejected'].includes(o.paymentStatus));
+    if (!payable.length) {
+      el('panel-payment').innerHTML = `<div class="empty">
+        <div class="empty-icon">💳</div><h3>No payments pending</h3>
+        <p>All your orders have a payment submitted or confirmed. Payment details appear here when you have an order awaiting payment.</p>
+        <a href="/strategies" class="btn btn-primary" style="margin-top:16px">Browse strategies</a></div>`;
+      return;
+    }
+
+    const selected = payable.find((o) => o.id === preselectId) || payable[0];
+
+    el('panel-payment').innerHTML = `
+      <div class="card">
+        <h3>Submit a payment</h3>
+        <div class="field">
+          <label for="pay-order">Which order are you paying for?</label>
+          <select class="select" id="pay-order">
+            ${payable.map((o) => `<option value="${o.id}" ${o.id === selected.id ? 'selected' : ''}>
+              ${AS.escapeHtml(o.reference)} — ${AS.escapeHtml(o.items[0] ? o.items[0].name : 'Order')} (${AS.money(o.amount)})
+            </option>`).join('')}
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Payment method</label>
+          <div class="pay-methods" id="dash-methods">
+            <button type="button" class="pay-method" data-method="bitcoin"><strong>₿ Bitcoin</strong><small>Pay to the BTC wallet address</small></button>
+            <button type="button" class="pay-method" data-method="paypal"><strong>🅿️ PayPal</strong><small>Friends and Family</small></button>
+          </div>
+        </div>
+
+        <div id="dash-pay-details"></div>
+      </div>`;
+
+    document.querySelectorAll('#dash-methods .pay-method').forEach((b) => {
+      b.addEventListener('click', () => selectDashMethod(b.dataset.method));
+    });
+  }
+
+  let dashMethod = null, dashProof = null;
+
+  function selectDashMethod(m) {
+    dashMethod = m; dashProof = null;
+    document.querySelectorAll('#dash-methods .pay-method').forEach((b) => b.classList.toggle('selected', b.dataset.method === m));
+
+    const info = m === 'bitcoin' ? payInfo.bitcoin : payInfo.paypal;
+    const block = m === 'bitcoin'
+      ? (info.address
+          ? `<div class="copy-box"><code>${AS.escapeHtml(info.address)}</code><button type="button" class="btn btn-sm btn-ghost" id="d-copy">Copy</button></div><p class="hint">${AS.escapeHtml(info.note)}</p>`
+          : `<div class="alert alert-info show">${AS.escapeHtml(info.note)}</div>`)
+      : `<div class="copy-box"><code>${AS.escapeHtml(info.instructions)}</code><button type="button" class="btn btn-sm btn-ghost" id="d-copy">Copy</button></div><p class="hint">${AS.escapeHtml(info.note)}</p>`;
+
+    el('dash-pay-details').innerHTML = `
+      <div class="field"><label>${m === 'bitcoin' ? 'Bitcoin wallet address' : 'PayPal instructions'}</label>${block}</div>
+      <div class="field">
+        <label for="d-ref">Reference / Transaction ID</label>
+        <input class="input" id="d-ref" maxlength="400" placeholder="${m === 'bitcoin' ? 'Your BTC transaction ID (TXID)' : 'Your PayPal transaction ID'}">
+      </div>
+      <div class="field">
+        <label>Upload Payment Screenshot / Proof</label>
+        <div class="file-drop" id="d-drop">
+          <input type="file" id="d-file" accept="image/png,image/jpeg,image/jpg,image/webp,application/pdf">
+          <div id="d-label"><div style="font-size:1.6rem;margin-bottom:6px">📎</div>
+            <strong style="display:block;font-size:.92rem">Click to upload your payment screenshot</strong>
+            <small style="color:var(--text-3)">PNG, JPG, JPEG, WEBP or PDF</small></div>
+        </div>
+      </div>
+      <div class="alert" id="d-alert"></div>
+      <button class="btn btn-accent btn-block btn-lg" id="d-submit">PAYMENT MADE</button>`;
+
+    const copyBtn = el('d-copy');
+    if (copyBtn) copyBtn.addEventListener('click', () => {
+      const text = m === 'bitcoin' ? payInfo.bitcoin.address : payInfo.paypal.instructions;
+      navigator.clipboard && navigator.clipboard.writeText(text).then(() => {
+        copyBtn.textContent = 'Copied!'; setTimeout(() => copyBtn.textContent = 'Copy', 1600);
+      }).catch(() => {});
+    });
+
+    const drop = el('d-drop'), input = el('d-file');
+    drop.addEventListener('click', () => input.click());
+    input.addEventListener('change', () => {
+      if (input.files[0]) {
+        dashProof = input.files[0];
+        el('d-label').innerHTML = `<div style="font-size:1.6rem;margin-bottom:6px">✅</div>
+          <strong style="display:block;font-size:.92rem">${AS.escapeHtml(dashProof.name)}</strong>
+          <small style="color:var(--text-3)">${AS.formatBytes(dashProof.size)} · click to change</small>`;
+      }
+    });
+
+    el('d-submit').addEventListener('click', async () => {
+      const btn = el('d-submit'), a = el('d-alert');
+      const orderId = el('pay-order').value;
+      btn.disabled = true; btn.textContent = 'Submitting...'; a.className = 'alert';
+      try {
+        const fd = new FormData();
+        fd.append('method', dashMethod);
+        const ref = el('d-ref').value.trim();
+        if (ref) fd.append('reference', ref);
+        if (dashProof) fd.append('proof', dashProof);
+        await AS.api(`/api/orders/${orderId}/payment`, { method: 'POST', body: fd });
+        AS.toast('Payment submitted. Agbota Segun has been notified.', 'success', 'Payment submitted');
+        await loadOrders();
+        switchPanel('orders');
+      } catch (err) {
+        a.className = 'alert alert-error show'; a.textContent = err.message;
+        btn.disabled = false; btn.textContent = 'PAYMENT MADE';
+      }
+    });
+  }
+
+  /* ---------- notifications ---------- */
+  async function renderNotifications() {
+    el('panel-notifications').innerHTML = '<div class="loading-box"><div class="spinner"></div></div>';
+    try {
+      const data = await AS.api('/api/notifications');
+      if (!data.notifications.length) {
+        el('panel-notifications').innerHTML = `<div class="empty"><div class="empty-icon">🔔</div>
+          <h3>No notifications</h3><p>You will be notified here about orders, payments, messages and status updates.</p></div>`;
+        return;
+      }
+      el('panel-notifications').innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <h3 style="margin:0">Notifications</h3>
+          <button class="btn btn-sm btn-ghost" id="n-read-all">Mark all read</button>
+        </div>
+        <div class="card" style="padding:0">
+          ${data.notifications.map((n) => `
+            <div class="notif ${n.read ? '' : 'unread'}" style="cursor:default">
+              <strong>${AS.escapeHtml(n.title)}</strong>
+              ${n.body ? `<p>${AS.escapeHtml(n.body)}</p>` : ''}
+              <time>${AS.formatDateTime(n.createdAt)}</time>
+            </div>`).join('')}
+        </div>`;
+      el('n-read-all').addEventListener('click', async () => {
+        await AS.api('/api/notifications/read-all', { method: 'POST' });
+        AS.setNotifCount(0);
+        renderNotifications();
+      });
+    } catch (e) {
+      el('panel-notifications').innerHTML = '<div class="empty"><p>Could not load notifications.</p></div>';
+    }
+  }
+
+  /* ---------- profile ---------- */
+  function renderProfile() {
+    el('panel-profile').innerHTML = `
+      <div class="grid grid-2">
+        <div class="card">
+          <h3>Your profile</h3>
+          <div class="alert" id="p-alert"></div>
+          <div class="field"><label for="p-name">Name</label><input class="input" id="p-name" value="${AS.escapeHtml(me.name)}" maxlength="80"></div>
+          <div class="field"><label>Email address</label><input class="input" value="${AS.escapeHtml(me.email)}" disabled style="opacity:.6">
+            <p class="hint">Your email is your login and cannot be changed here.</p></div>
+          <div class="field"><label for="p-bio">About your channel (optional)</label>
+            <textarea class="textarea" id="p-bio" maxlength="600" placeholder="Your channel, niche and goals.">${AS.escapeHtml(me.bio || '')}</textarea></div>
+          <button class="btn btn-primary" id="p-save">Save changes</button>
+        </div>
+        <div class="card">
+          <h3>Change password</h3>
+          <div class="alert" id="pw-alert"></div>
+          <div class="field"><label for="pw-current">Current password</label><input class="input" type="password" id="pw-current" autocomplete="current-password"></div>
+          <div class="field"><label for="pw-new">New password</label><input class="input" type="password" id="pw-new" minlength="8" autocomplete="new-password">
+            <p class="hint">At least 8 characters.</p></div>
+          <button class="btn btn-ghost" id="pw-save">Update password</button>
+          <div style="border-top:1px solid var(--line);margin-top:20px;padding-top:16px">
+            <p style="font-size:.86rem;color:var(--text-3);margin:0">
+              Member since ${AS.formatDate(me.createdAt)}. Your account and all your data are stored permanently.
+            </p>
+          </div>
+        </div>
+      </div>`;
+
+    el('p-save').addEventListener('click', async () => {
+      const a = el('p-alert'); a.className = 'alert';
+      try {
+        const d = await AS.api('/api/auth/profile', {
+          method: 'PATCH',
+          body: { name: el('p-name').value, bio: el('p-bio').value || null },
+        });
+        me = d.user;
+        a.className = 'alert alert-success show'; a.textContent = 'Profile updated.';
+        AS.toast('Profile updated.', 'success');
+      } catch (err) { a.className = 'alert alert-error show'; a.textContent = err.message; }
+    });
+
+    el('pw-save').addEventListener('click', async () => {
+      const a = el('pw-alert'); a.className = 'alert';
+      try {
+        await AS.api('/api/auth/change-password', {
+          method: 'POST',
+          body: { currentPassword: el('pw-current').value, newPassword: el('pw-new').value },
+        });
+        a.className = 'alert alert-success show'; a.textContent = 'Password updated.';
+        el('pw-current').value = ''; el('pw-new').value = '';
+      } catch (err) { a.className = 'alert alert-error show'; a.textContent = err.message; }
+    });
+  }
+
+  /* ---------- review modal ---------- */
+  function renderStars() {
+    el('rv-stars').innerHTML = [1,2,3,4,5].map((i) =>
+      `<button type="button" data-star="${i}" class="${i <= reviewRating ? 'on' : ''}">★</button>`).join('');
+    el('rv-stars').querySelectorAll('button').forEach((b) => {
+      b.addEventListener('click', () => { reviewRating = parseInt(b.dataset.star, 10); renderStars(); });
+    });
+  }
+
+  function openReview(orderId) {
+    reviewOrderId = orderId; reviewRating = 5;
+    renderStars();
+    el('rv-body').value = '';
+    el('rv-alert').className = 'alert';
+    el('review-modal').classList.add('open');
+  }
+
+  /* ---------- panels ---------- */
+  function switchPanel(name) {
+    document.querySelectorAll('#dash-nav button').forEach((b) => b.classList.toggle('active', b.dataset.panel === name));
+    document.querySelectorAll('.tab-panel').forEach((p) => p.classList.toggle('active', p.id === 'panel-' + name));
+    if (name === 'payment') renderPayment();
+    if (name === 'notifications') renderNotifications();
+    if (name === 'profile') renderProfile();
+    history.replaceState(null, '', '#' + name);
+  }
+
+  async function loadOrders() {
+    const data = await AS.api('/api/orders');
+    orders = data.orders;
+    renderOverview();
+    renderOrders();
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    AS.boot({ after: async () => {
+      me = await AS.requireAuth('/dashboard');
+      if (!me) return;
+      if (me.role === 'owner') { window.location.href = '/admin'; return; }
+
+      el('dash-welcome').textContent = 'Welcome back, ' + me.name + '.';
+
+      try {
+        payInfo = await AS.api('/api/orders/meta/payment-info');
+        await loadOrders();
+      } catch (e) {
+        el('panel-overview').innerHTML = '<div class="empty"><p>Could not load your dashboard. Please refresh.</p></div>';
+      }
+
+      const hash = location.hash.replace('#', '');
+      if (hash.startsWith('order-')) {
+        switchPanel('orders');
+        setTimeout(() => {
+          const target = document.getElementById(hash);
+          if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 300);
+      } else if (['overview','orders','payment','notifications','profile'].includes(hash)) {
+        switchPanel(hash);
+      }
+    }});
+
+    document.querySelectorAll('#dash-nav button').forEach((b) => {
+      b.addEventListener('click', () => switchPanel(b.dataset.panel));
+    });
+
+    el('rv-close').addEventListener('click', () => el('review-modal').classList.remove('open'));
+    el('rv-cancel').addEventListener('click', () => el('review-modal').classList.remove('open'));
+    el('rv-submit').addEventListener('click', async () => {
+      const a = el('rv-alert'); a.className = 'alert';
+      const btn = el('rv-submit'); btn.disabled = true; btn.textContent = 'Submitting...';
+      try {
+        await AS.api('/api/reviews', {
+          method: 'POST',
+          body: { orderId: reviewOrderId, rating: reviewRating, body: el('rv-body').value || null },
+        });
+        el('review-modal').classList.remove('open');
+        AS.toast('Thank you for your review.', 'success');
+        await loadOrders();
+      } catch (err) {
+        a.className = 'alert alert-error show'; a.textContent = err.message;
+      } finally { btn.disabled = false; btn.textContent = 'Submit review'; }
+    });
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Access — Agbota Segun</title>
+<link rel="stylesheet" href="/assets/css/styles.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%236d5cff'/%3E%3Ctext x='50' y='68' font-size='48' font-weight='bold' fill='white' text-anchor='middle' font-family='sans-serif'%3EAS%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+<div id="site-nav"></div>
+
+<section class="section" style="padding-top:52px">
+  <div class="container" style="max-width:480px">
+    <div class="section-head" style="margin-bottom:26px">
+      <span class="eyebrow">Access</span>
+      <h1 style="font-size:clamp(1.7rem,3.6vw,2.3rem)">Your creator account</h1>
+      <p style="color:var(--text-3);font-size:.95rem">
+        Your account, orders and messages are saved permanently — log out, close your browser,
+        come back any time and everything will still be here.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="tabs" style="margin-bottom:22px">
+        <button class="tab active" data-tab="login">Log in</button>
+        <button class="tab" data-tab="register">Create account</button>
+      </div>
+
+      <div class="alert" id="auth-alert"></div>
+
+      <!-- LOGIN -->
+      <div class="tab-panel active" id="panel-login">
+        <form id="login-form" autocomplete="on">
+          <div class="field">
+            <label for="l-email">Email address</label>
+            <input class="input" id="l-email" type="email" name="email" required autocomplete="email" placeholder="you@example.com">
+          </div>
+          <div class="field">
+            <label for="l-password">Password</label>
+            <input class="input" id="l-password" type="password" name="password" required autocomplete="current-password" placeholder="Your password">
+          </div>
+          <button type="submit" class="btn btn-primary btn-block btn-lg" id="login-btn">Log in</button>
+        </form>
+        <p style="text-align:center;margin:16px 0 0;font-size:.88rem;color:var(--text-3)">
+          New here? <a href="#" id="to-register" style="color:var(--brand-2);font-weight:600">Create an account</a>
+        </p>
+      </div>
+
+      <!-- REGISTER -->
+      <div class="tab-panel" id="panel-register">
+        <form id="register-form" autocomplete="on">
+          <div class="field">
+            <label for="r-name">Your name</label>
+            <input class="input" id="r-name" name="name" required minlength="2" maxlength="80" autocomplete="name" placeholder="How should Agbota Segun address you?">
+          </div>
+          <div class="field">
+            <label for="r-email">Email address</label>
+            <input class="input" id="r-email" type="email" name="email" required autocomplete="email" placeholder="you@example.com">
+          </div>
+          <div class="field">
+            <label for="r-password">Password</label>
+            <input class="input" id="r-password" type="password" name="password" required minlength="8" autocomplete="new-password" placeholder="At least 8 characters">
+            <p class="hint">Minimum 8 characters. Your password is securely hashed and never stored as plain text.</p>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block btn-lg" id="register-btn">Create account</button>
+        </form>
+        <p style="text-align:center;margin:16px 0 0;font-size:.88rem;color:var(--text-3)">
+          Already have an account? <a href="#" id="to-login" style="color:var(--brand-2);font-weight:600">Log in</a>
+        </p>
+      </div>
+    </div>
+
+    <p style="text-align:center;margin-top:20px;font-size:.85rem;color:var(--text-3)">
+      After signing in you can continue browsing the site — you are not forced into a dashboard.
+    </p>
+  </div>
+</section>
+
+<div id="site-footer"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/assets/js/app.js"></script>
+<script>
+(function () {
+  const params = new URLSearchParams(location.search);
+  const next = params.get('next');
+
+  function showTab(name) {
+    document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
+    document.querySelectorAll('.tab-panel').forEach((p) => p.classList.toggle('active', p.id === 'panel-' + name));
+    const a = document.getElementById('auth-alert');
+    a.className = 'alert';
+  }
+
+  /**
+   * Produces an accurate reason when the server does not recognise a session
+   * that was just created. "Enable cookies" is only correct when the browser
+   * really is blocking storage — otherwise it is a server misconfiguration
+   * (almost always a missing/rotating JWT_SECRET) and must say so.
+   */
+  function sessionFailureMessage() {
+    const storageBlocked = !AS.tokenIsPersistable();
+    if (storageBlocked) {
+      return 'Your browser is blocking cookies and site data for this site, so the login could not be kept. ' +
+             'Allow cookies/site data for this site (or leave private mode) and try again.';
+    }
+    return 'Login was accepted but the server did not recognise the session. ' +
+           'This is a server configuration problem, not your browser. ' +
+           'Please contact support — the JWT_SECRET environment variable is likely missing or changing on the server.';
+  }
+
+  function alertMsg(msg, type) {
+    const a = document.getElementById('auth-alert');
+    a.className = 'alert alert-' + type + ' show';
+    a.textContent = msg;
+    a.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function go(user) {
+    // Never force a new streamer straight into a backend dashboard.
+    if (next) { window.location.href = next; return; }
+    window.location.href = user.role === 'owner' ? '/admin' : '/';
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    AS.boot({ after: async () => {
+      const u = AS.user();
+      if (u) {
+        // Already signed in.
+        document.querySelector('.card').innerHTML = `
+          <div style="text-align:center;padding:14px 0">
+            <div class="empty-icon" style="margin-bottom:14px">✅</div>
+            <h3>You are signed in</h3>
+            <p style="font-size:.93rem">Signed in as <strong style="color:var(--text)">${AS.escapeHtml(u.name)}</strong> (${AS.escapeHtml(u.email)}).</p>
+            <div style="display:grid;gap:9px;margin-top:18px">
+              <a href="/" class="btn btn-ghost">Back to the website</a>
+              <a href="${u.role === 'owner' ? '/admin' : '/dashboard'}" class="btn btn-primary">${u.role === 'owner' ? 'Owner Dashboard' : 'Go to Dashboard'}</a>
+              <a href="/chat" class="btn btn-ghost">Open Chat</a>
+            </div>
+          </div>`;
+      }
+    }});
+
+    document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => showTab(t.dataset.tab)));
+    const toReg = document.getElementById('to-register');
+    const toLog = document.getElementById('to-login');
+    if (toReg) toReg.addEventListener('click', (e) => { e.preventDefault(); showTab('register'); });
+    if (toLog) toLog.addEventListener('click', (e) => { e.preventDefault(); showTab('login'); });
+    if (location.pathname === '/register') showTab('register');
+
+    const loginForm = document.getElementById('login-form');
+    if (loginForm) loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('login-btn');
+      btn.disabled = true; btn.textContent = 'Logging in...';
+      try {
+        const data = await AS.api('/api/auth/login', {
+          method: 'POST',
+          body: {
+            email: document.getElementById('l-email').value,
+            password: document.getElementById('l-password').value,
+          },
+        });
+        // Defensive: if a stale cached app.js is ever served, fall back to the
+        // long-standing AS.getUser() refresh instead of throwing. Same single
+        // auth system either way — this only avoids a hard failure.
+        if (typeof AS.onAuthenticated === 'function') AS.onAuthenticated(data);
+        alertMsg('Welcome back, ' + data.user.name + '. Redirecting...', 'success');
+        // Confirm with the SERVER that the session works before redirecting.
+        // The fresh token is passed explicitly so this does not depend on the
+        // cookie being accepted or on browser storage being writable.
+        const verified = await AS.verifySession(data.token);
+        if (!verified) {
+          alertMsg(sessionFailureMessage(), 'error');
+          btn.disabled = false; btn.textContent = 'Log in';
+          return;
+        }
+        // The session works right now, but if it relies on the Bearer token
+        // AND the token cannot be persisted, it will not survive a page load.
+        // Say so plainly rather than bouncing the user back to a login screen.
+        if (verified.via === 'token' && !AS.tokenIsPersistable()) {
+          alertMsg('You are signed in, but this browser is blocking cookies and site data for this site, ' +
+                   'so you will be signed out when the page reloads. Allow cookies/site data for this site ' +
+                   '(or leave private mode) to stay signed in.', 'error');
+          btn.disabled = false; btn.textContent = 'Log in';
+          return;
+        }
+        setTimeout(() => go(verified.user), 400);
+      } catch (err) {
+        alertMsg(err.message, 'error');
+        btn.disabled = false; btn.textContent = 'Log in';
+      }
+    });
+
+    const regForm = document.getElementById('register-form');
+    if (regForm) regForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('register-btn');
+      btn.disabled = true; btn.textContent = 'Creating account...';
+      try {
+        const data = await AS.api('/api/auth/register', {
+          method: 'POST',
+          body: {
+            name: document.getElementById('r-name').value,
+            email: document.getElementById('r-email').value,
+            password: document.getElementById('r-password').value,
+          },
+        });
+        if (typeof AS.onAuthenticated === 'function') AS.onAuthenticated(data);
+        alertMsg('Account created. Welcome, ' + data.user.name + '.', 'success');
+        const verified = await AS.verifySession(data.token);
+        if (!verified) {
+          alertMsg(sessionFailureMessage(), 'error');
+          btn.disabled = false; btn.textContent = 'Create account';
+          return;
+        }
+        setTimeout(() => go(verified.user), 400);
+      } catch (err) {
+        alertMsg(err.message, 'error');
+        if (err.code === 'EMAIL_EXISTS') {
+          setTimeout(() => {
+            showTab('login');
+            alertMsg('This email is already registered. Please log in instead.', 'info');
+            const le = document.getElementById('l-email');
+            le.value = document.getElementById('r-email').value;
+            document.getElementById('l-password').focus();
+          }, 900);
+        }
+        btn.disabled = false; btn.textContent = 'Create account';
+      }
+    });
+  });
+})();
+</script>
+</body>
+</html>

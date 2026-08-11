@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Owner Dashboard — Agbota Segun</title>
+<link rel="stylesheet" href="/assets/css/styles.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%236d5cff'/%3E%3Ctext x='50' y='68' font-size='48' font-weight='bold' fill='white' text-anchor='middle' font-family='sans-serif'%3EAS%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+<div id="site-nav"></div>
+
+<main class="section-tight" style="padding-top:40px;min-height:70vh">
+  <div class="container container-wide">
+    <div style="margin-bottom:24px;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:center">
+      <div>
+        <span class="eyebrow">Owner Access</span>
+        <h1 style="font-size:clamp(1.6rem,3.4vw,2.2rem);margin:0">Owner Dashboard</h1>
+      </div>
+      <a href="/chat" class="btn btn-primary">💬 Open Chat Inbox</a>
+    </div>
+
+    <div id="admin-gate"><div class="loading-box"><div class="spinner"></div></div></div>
+
+    <div id="admin-body" style="display:none">
+      <div class="dash-shell">
+        <nav class="dash-nav" id="admin-nav">
+          <button class="active" data-panel="overview">📊 Overview</button>
+          <button data-panel="orders">🧾 Orders</button>
+          <button data-panel="payments">💰 Payments <span class="badge-count" id="pay-badge" style="display:none">0</span></button>
+          <button data-panel="customers">👥 Streamers</button>
+          <button data-panel="proof">🖼️ Proof of Work</button>
+          <button data-panel="reviews">⭐ Reviews</button>
+          <button data-panel="products">📦 Products</button>
+          <button data-panel="contact">📨 Contact</button>
+        </nav>
+        <div>
+          <div class="tab-panel active" id="panel-overview"></div>
+          <div class="tab-panel" id="panel-orders"></div>
+          <div class="tab-panel" id="panel-payments"></div>
+          <div class="tab-panel" id="panel-customers"></div>
+          <div class="tab-panel" id="panel-proof"></div>
+          <div class="tab-panel" id="panel-reviews"></div>
+          <div class="tab-panel" id="panel-products"></div>
+          <div class="tab-panel" id="panel-contact"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- proof edit modal -->
+<div class="modal" id="proof-modal">
+  <div class="modal-box">
+    <div class="modal-head"><h3 id="pm-title">Edit proof</h3><button class="close-x" id="pm-close">&times;</button></div>
+    <div class="modal-body">
+      <div class="field"><label for="pm-cat">Category</label><select class="select" id="pm-cat"></select></div>
+      <div class="field"><label for="pm-name">Title</label><input class="input" id="pm-name" maxlength="160"></div>
+      <div class="field"><label for="pm-caption">Factual caption</label>
+        <textarea class="textarea" id="pm-caption" maxlength="800"></textarea>
+        <p class="hint">Describe only what the screenshot actually shows. Redact private details before uploading.</p></div>
+      <div class="field"><label for="pm-order">Sort order</label><input class="input" id="pm-order" type="number" min="0"></div>
+      <div class="alert" id="pm-alert"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="pm-cancel">Cancel</button>
+      <button class="btn btn-primary" id="pm-save">Save changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- image viewer -->
+<div class="lightbox" id="lightbox">
+  <button class="lightbox-close" id="lb-close">&times;</button>
+  <div class="lightbox-content"><img id="lb-img" src="" alt=""></div>
+</div>
+
+<div id="site-footer"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/assets/js/app.js"></script>
+<script>
+(function () {
+  let me = null, stats = null, proofCats = [], editingProof = null;
+  const el = (id) => document.getElementById(id);
+
+  const pillClass = (s) => ({
+    pending_payment: 'pill-pending', payment_submitted: 'pill-submitted', payment_confirmed: 'pill-confirmed',
+    in_progress: 'pill-progress', delivered: 'pill-delivered', completed: 'pill-completed', cancelled: 'pill-cancelled',
+    submitted: 'pill-submitted', confirmed: 'pill-confirmed', rejected: 'pill-rejected',
+  }[s] || 'pill-pending');
+
+  const STATUSES = [
+    ['pending_payment', 'Pending Payment'], ['payment_submitted', 'Payment Submitted'],
+    ['payment_confirmed', 'Payment Confirmed'], ['in_progress', 'In Progress'],
+    ['delivered', 'Delivered'], ['completed', 'Completed'], ['cancelled', 'Cancelled'],
+  ];
+
+  function viewImage(url) {
+    el('lb-img').src = url;
+    el('lightbox').classList.add('open');
+  }
+
+  /* ---------- overview ---------- */
+  async function loadOverview() {
+    el('panel-overview').innerHTML = '<div class="loading-box"><div class="spinner"></div></div>';
+    stats = await AS.api('/api/admin/stats');
+    if (stats.pendingPayments > 0) {
+      el('pay-badge').textContent = stats.pendingPayments;
+      el('pay-badge').style.display = '';
+    } else el('pay-badge').style.display = 'none';
+
+    el('panel-overview').innerHTML = `
+      <div class="grid grid-4" style="margin-bottom:24px">
+        <div class="stat-card"><div class="v">${stats.customers}</div><div class="l">Streamers</div></div>
+        <div class="stat-card"><div class="v">${stats.orders}</div><div class="l">Total orders</div></div>
+        <div class="stat-card"><div class="v" style="color:${stats.pendingPayments ? 'var(--warn)' : 'inherit'}">${stats.pendingPayments}</div><div class="l">Payments to review</div></div>
+        <div class="stat-card"><div class="v">${AS.money(stats.confirmedRevenue)}</div><div class="l">Confirmed revenue</div></div>
+        <div class="stat-card"><div class="v" style="color:${stats.unreadMessages ? 'var(--brand-2)' : 'inherit'}">${stats.unreadMessages}</div><div class="l">Unread messages</div></div>
+        <div class="stat-card"><div class="v">${stats.reviews}</div><div class="l">Reviews</div></div>
+        <div class="stat-card"><div class="v">${stats.proofItems}</div><div class="l">Proof items</div></div>
+      </div>
+      <div class="grid grid-2">
+        <div class="card"><h3>Quick actions</h3>
+          <div style="display:grid;gap:9px;margin-top:12px">
+            <button class="btn btn-primary btn-block" data-go="payments">Review payments${stats.pendingPayments ? ' (' + stats.pendingPayments + ')' : ''}</button>
+            <a href="/chat" class="btn btn-ghost btn-block">Open chat inbox${stats.unreadMessages ? ' (' + stats.unreadMessages + ')' : ''}</a>
+            <button class="btn btn-ghost btn-block" data-go="proof">Upload Proof of Work</button>
+            <button class="btn btn-ghost btn-block" data-go="orders">Manage orders</button>
+          </div>
+        </div>
+        <div class="card"><h3>Reminders</h3>
+          <ul class="feature-list" style="margin-top:12px">
+            <li>Only upload genuine screenshots to Proof of Work.</li>
+            <li>Redact private details (emails, phone numbers, wallet keys) before uploading.</li>
+            <li>Confirm a payment only after you have verified it actually arrived.</li>
+            <li>Update order status so streamers can track progress.</li>
+          </ul>
+        </div>
+      </div>`;
+
+    el('panel-overview').querySelectorAll('[data-go]').forEach((b) =>
+      b.addEventListener('click', () => switchPanel(b.dataset.go)));
+  }
+
+  /* ---------- orders ---------- */
+  async function loadOrders() {
+    el('panel-orders').innerHTML = '<div class="loading-box"><div class="spinner"></div></div>';
+    const { orders } = await AS.api('/api/admin/orders');
+    if (!orders.length) {
+      el('panel-orders').innerHTML = '<div class="empty"><div class="empty-icon">🧾</div><h3>No orders yet</h3></div>';
+      return;
+    }
+    el('panel-orders').innerHTML = orders.map((o) => `
+      <div class="order-card" id="order-${o.id}">
+        <div class="order-head">
+          <div>
+            <h3 style="font-size:1.05rem;margin-bottom:3px">${AS.escapeHtml(o.items[0] ? o.items[0].name : 'Order')}</h3>
+            <span class="order-ref">${AS.escapeHtml(o.reference)} · ${AS.escapeHtml(o.customerName)} (${AS.escapeHtml(o.customerEmail)}) · ${AS.formatDate(o.createdAt)}</span>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span class="pill ${pillClass(o.status)}">${AS.escapeHtml(o.statusLabel)}</span>
+            <strong>${AS.money(o.amount)}</strong>
+          </div>
+        </div>
+        ${o.notes ? `<div class="alert alert-info show" style="margin-bottom:12px"><strong>Client notes:</strong> ${AS.escapeHtml(o.notes)}</div>` : ''}
+        <div class="order-meta">
+          <div><span>Payment</span><strong>${o.paymentMethod || '—'} / ${AS.escapeHtml(o.paymentStatus)}</strong></div>
+          <div><span>Proof</span><strong>${o.payments[0] && o.payments[0].proofFileId ? `<a href="/api/files/${o.payments[0].proofFileId}" target="_blank" rel="noopener" style="color:var(--brand-2)">View</a>` : '—'}</strong></div>
+          <div><span>Reference</span><strong style="font-size:.8rem;word-break:break-all">${o.payments[0] && o.payments[0].reference ? AS.escapeHtml(o.payments[0].reference) : '—'}</strong></div>
+        </div>
+        <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:14px;align-items:center">
+          <select class="select" style="max-width:210px" data-status="${o.id}">
+            ${STATUSES.map(([v, l]) => `<option value="${v}" ${o.status === v ? 'selected' : ''}>${l}</option>`).join('')}
+          </select>
+          <button class="btn btn-sm btn-primary" data-savestatus="${o.id}">Update status</button>
+          <button class="btn btn-sm btn-ghost" data-note="${o.id}">Delivery note</button>
+        </div>
+        <div id="note-box-${o.id}" style="display:none;margin-top:12px">
+          <textarea class="textarea" id="note-${o.id}" maxlength="2000" placeholder="Add a note the streamer will see on their order (e.g. where the strategy was delivered).">${AS.escapeHtml(o.deliveryNote || '')}</textarea>
+          <button class="btn btn-sm btn-primary" style="margin-top:8px" data-savenote="${o.id}">Save note</button>
+        </div>
+      </div>`).join('');
+
+    el('panel-orders').querySelectorAll('[data-savestatus]').forEach((b) => b.addEventListener('click', async () => {
+      const id = b.dataset.savestatus;
+      const status = document.querySelector(`[data-status="${id}"]`).value;
+      b.disabled = true;
+      try {
+        await AS.api('/api/admin/orders/' + id, { method: 'PATCH', body: { status } });
+        AS.toast('Order status updated.', 'success');
+        loadOrders();
+      } catch (e) { AS.toast(e.message, 'error'); b.disabled = false; }
+    }));
+
+    el('panel-orders').querySelectorAll('[data-note]').forEach((b) => b.addEventListener('click', () => {
+      const box = el('note-box-' + b.dataset.note);
+      box.style.display = box.style.display === 'none' ? 'block' : 'none';
+    }));
+
+    el('panel-orders').querySelectorAll('[data-savenote]').forEach((b) => b.addEventListener('click', async () => {
+      const id = b.dataset.savenote;
+      b.disabled = true;
+      try {
+        await AS.api('/api/admin/orders/' + id, { method: 'PATCH', body: { deliveryNote: el('note-' + id).value } });
+        AS.toast('Delivery note saved.', 'success');
+        loadOrders();
+      } catch (e) { AS.toast(e.message, 'error'); b.disabled = false; }
+    }));
+  }
+
+  /* ---------- payments ---------- */
+  async function loadPayments() {
+    el('panel-payments').innerHTML = '<div class="loading-box"><div class="spinner"></div></div>';
+    const { payments } = await AS.api('/api/admin/payments');
+    if (!payments.length) {
+      el('panel-payments').innerHTML = '<div class="empty"><div class="empty-icon">💰</div><h3>No payment submissions yet</h3></div>';
+      return;
+    }
+    el('panel-payments').innerHTML = payments.map((p) => `
+      <div class="order-card" id="payment-${p.id}">
+        <div class="order-head">
+          <div>
+            <h3 style="font-size:1.02rem;margin-bottom:3px">${p.status === 'submitted' ? '💰 PAYMENT MADE' : p.status === 'confirmed' ? '✅ Payment confirmed' : '❌ Payment rejected'}</h3>
+            <span class="order-ref">${AS.escapeHtml(p.orderReference)} · ${AS.escapeHtml(p.customerName)} (${AS.escapeHtml(p.customerEmail)}) · ${AS.formatDateTime(p.createdAt)}</span>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span class="pill ${pillClass(p.status)}">${AS.escapeHtml(p.status)}</span>
+            <strong>${AS.money(p.amount)}</strong>
+          </div>
+        </div>
+        <div class="order-meta">
+          <div><span>Method</span><strong>${p.method === 'bitcoin' ? '₿ Bitcoin' : '🅿️ PayPal'}</strong></div>
+          <div style="grid-column:span 2"><span>Transaction reference</span>
+            <strong style="font-size:.82rem;word-break:break-all">${p.reference ? AS.escapeHtml(p.reference) : '— not provided —'}</strong></div>
+        </div>
+        ${p.proofUrl ? `<div style="margin-top:14px">
+            <span style="font-size:.72rem;color:var(--text-3);text-transform:uppercase;letter-spacing:.07em;font-weight:600">Payment proof</span>
+            <div style="margin-top:8px"><a href="${p.proofUrl}" target="_blank" rel="noopener" class="btn btn-sm btn-ghost">Open proof in new tab</a></div>
+          </div>` : '<p class="hint" style="margin-top:12px">No proof file was uploaded with this submission.</p>'}
+        ${p.status === 'submitted' ? `
+          <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:15px">
+            <button class="btn btn-accent" data-confirm="${p.id}">CONFIRM PAYMENT</button>
+            <button class="btn btn-danger" data-reject="${p.id}">Reject</button>
+          </div>` : `<p class="hint" style="margin-top:12px">Reviewed ${p.reviewedAt ? AS.formatDateTime(p.reviewedAt) : ''}${p.adminNote ? ' · ' + AS.escapeHtml(p.adminNote) : ''}</p>`}
+      </div>`).join('');
+
+    el('panel-payments').querySelectorAll('[data-confirm]').forEach((b) => b.addEventListener('click', async () => {
+      if (!confirm('Confirm this payment? Only do this after you have verified the payment actually arrived.')) return;
+      b.disabled = true; b.textContent = 'Confirming...';
+      try {
+        await AS.api(`/api/admin/payments/${b.dataset.confirm}/confirm`, { method: 'POST', body: {} });
+        AS.toast('Payment confirmed. The streamer has been notified.', 'success');
+        loadPayments(); loadOverview();
+      } catch (e) { AS.toast(e.message, 'error'); b.disabled = false; b.textContent = 'CONFIRM PAYMENT'; }
+    }));
+
+    el('panel-payments').querySelectorAll('[data-reject]').forEach((b) => b.addEventListener('click', async () => {
+      const note = prompt('Reason for rejecting this payment (the streamer will see this):');
+      if (note === null) return;
+      b.disabled = true;
+      try {
+        await AS.api(`/api/admin/payments/${b.dataset.reject}/reject`, { method: 'POST', body: { note } });
+        AS.toast('Payment rejected.', 'info');
+        loadPayments(); loadOverview();
+      } catch (e) { AS.toast(e.message, 'error'); b.disabled = false; }
+    }));
+  }
+
+  /* ---------- customers ---------- */
+  async function loadCustomers() {
+    el('panel-customers').innerHTML = '<div class="loading-box"><div class="spinner"></div></div>';
+    const { customers } = await AS.api('/api/admin/customers');
+    if (!customers.length) {
+      el('panel-customers').innerHTML = '<div class="empty"><div class="empty-icon">👥</div><h3>No streamers registered yet</h3></div>';
+      return;
+    }
+    el('panel-customers').innerHTML = `<div class="table-wrap"><table>
+      <thead><tr><th>Name</th><th>Email</th><th>Orders</th><th>Confirmed spend</th><th>Joined</th></tr></thead>
+      <tbody>${customers.map((c) => `<tr>
+        <td><strong>${AS.escapeHtml(c.name)}</strong></td>
+        <td>${AS.escapeHtml(c.email)}</td>
+        <td>${c.orderCount}</td>
+        <td>${AS.money(c.spent)}</td>
+        <td>${AS.formatDate(c.createdAt)}</td>
+      </tr>`).join('')}</tbody></table></div>`;
+  }
+
+  /* ---------- proof ---------- */
+  async function loadProof() {
+    el('panel-proof').innerHTML = '<div class="loading-box"><div class="spinner"></div></div>';
+    const data = await AS.api('/api/admin/proof');
+    proofCats = data.categories;
+
+    el('panel-proof').innerHTML = `
+      <div class="card" style="margin-bottom:22px">
+        <h3>Upload Proof of Work</h3>
+        <p style="font-size:.9rem">
+          Upload genuine screenshots only. Redact private information — phone numbers, email addresses,
+          payment account numbers, wallet keys and personal details — before uploading.
+        </p>
+        <div class="grid grid-2" style="gap:0 15px">
+          <div class="field"><label for="up-cat">Category</label>
+            <select class="select" id="up-cat">${proofCats.map((c) => `<option value="${c.key}">${AS.escapeHtml(c.label)}</option>`).join('')}</select></div>
+          <div class="field"><label for="up-title">Title</label>
+            <input class="input" id="up-title" maxlength="160" placeholder="e.g. Channel analysis delivered"></div>
+        </div>
+        <div class="field"><label for="up-caption">Factual caption</label>
+          <textarea class="textarea" id="up-caption" maxlength="800" placeholder="Describe only what the screenshot actually shows."></textarea></div>
+        <div class="field"><label>Screenshot</label>
+          <div class="file-drop" id="up-drop">
+            <input type="file" id="up-file" accept="image/png,image/jpeg,image/jpg,image/webp,image/gif">
+            <div id="up-label"><div style="font-size:1.7rem;margin-bottom:7px">🖼️</div>
+              <strong style="display:block;font-size:.93rem">Click to choose a screenshot</strong>
+              <small style="color:var(--text-3)">PNG, JPG, JPEG, WEBP or GIF</small></div>
+          </div></div>
+        <div class="alert" id="up-alert"></div>
+        <button class="btn btn-primary btn-lg" id="up-submit">Upload proof</button>
+      </div>
+
+      <h3 style="margin-bottom:14px">Uploaded proof (${data.items.length})</h3>
+      ${data.items.length ? `<div class="proof-grid">${data.items.map((it) => `
+        <div class="proof-item" style="cursor:default">
+          <img class="proof-thumb" src="${it.url}" alt="${AS.escapeHtml(it.title)}" data-view="${it.url}" style="cursor:zoom-in">
+          <div class="proof-body">
+            <span class="proof-cat">${AS.escapeHtml(it.categoryLabel)}</span>
+            <h4>${AS.escapeHtml(it.title)}</h4>
+            ${it.caption ? `<p>${AS.escapeHtml(it.caption)}</p>` : ''}
+            <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:12px">
+              <button class="btn btn-sm btn-ghost" data-edit="${it.id}">Edit</button>
+              <button class="btn btn-sm btn-ghost" data-pub="${it.id}" data-state="${it.isPublished}">${it.isPublished ? 'Unpublish' : 'Publish'}</button>
+              <button class="btn btn-sm btn-ghost" data-up="${it.id}">↑</button>
+              <button class="btn btn-sm btn-ghost" data-down="${it.id}">↓</button>
+              <button class="btn btn-sm btn-danger" data-del="${it.id}">Delete</button>
+            </div>
+          </div>
+        </div>`).join('')}</div>`
+        : `<div class="empty"><div class="empty-icon">🖼️</div><h3>No proof uploaded yet</h3>
+            <p>Upload your genuine screenshots above and they will appear on the public Proof of Work page.</p></div>`}`;
+
+    // upload handlers
+    const drop = el('up-drop'), input = el('up-file');
+    let file = null;
+    drop.addEventListener('click', () => input.click());
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('drag'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
+    drop.addEventListener('drop', (e) => {
+      e.preventDefault(); drop.classList.remove('drag');
+      if (e.dataTransfer.files[0]) { file = e.dataTransfer.files[0]; showFile(file); }
+    });
+    input.addEventListener('change', () => { if (input.files[0]) { file = input.files[0]; showFile(file); } });
+
+    function showFile(f) {
+      el('up-label').innerHTML = `<div style="font-size:1.7rem;margin-bottom:7px">✅</div>
+        <strong style="display:block;font-size:.93rem">${AS.escapeHtml(f.name)}</strong>
+        <small style="color:var(--text-3)">${AS.formatBytes(f.size)} · click to change</small>`;
+    }
+
+    el('up-submit').addEventListener('click', async () => {
+      const a = el('up-alert'); a.className = 'alert';
+      if (!file) { a.className = 'alert alert-error show'; a.textContent = 'Please choose a screenshot to upload.'; return; }
+      const btn = el('up-submit'); btn.disabled = true; btn.textContent = 'Uploading...';
+      try {
+        const fd = new FormData();
+        fd.append('image', file);
+        fd.append('category', el('up-cat').value);
+        fd.append('title', el('up-title').value);
+        fd.append('caption', el('up-caption').value);
+        await AS.api('/api/admin/proof', { method: 'POST', body: fd });
+        AS.toast('Proof uploaded and published.', 'success');
+        loadProof(); loadOverview();
+      } catch (err) {
+        a.className = 'alert alert-error show'; a.textContent = err.message;
+        btn.disabled = false; btn.textContent = 'Upload proof';
+      }
+    });
+
+    el('panel-proof').querySelectorAll('[data-view]').forEach((img) =>
+      img.addEventListener('click', () => viewImage(img.dataset.view)));
+
+    el('panel-proof').querySelectorAll('[data-edit]').forEach((b) =>
+      b.addEventListener('click', () => openProofEdit(data.items.find((x) => String(x.id) === b.dataset.edit))));
+
+    el('panel-proof').querySelectorAll('[data-pub]').forEach((b) => b.addEventListener('click', async () => {
+      try {
+        await AS.api('/api/admin/proof/' + b.dataset.pub, { method: 'PATCH', body: { isPublished: b.dataset.state !== 'true' } });
+        loadProof();
+      } catch (e) { AS.toast(e.message, 'error'); }
+    }));
+
+    el('panel-proof').querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
+      if (!confirm('Delete this proof item permanently?')) return;
+      try {
+        await AS.api('/api/admin/proof/' + b.dataset.del, { method: 'DELETE' });
+        AS.toast('Proof deleted.', 'info');
+        loadProof(); loadOverview();
+      } catch (e) { AS.toast(e.message, 'error'); }
+    }));
+
+    const reorder = async (id, dir) => {
+      const ids = data.items.map((i) => i.id);
+      const idx = ids.indexOf(Number(id));
+      const swap = idx + dir;
+      if (idx < 0 || swap < 0 || swap >= ids.length) return;
+      [ids[idx], ids[swap]] = [ids[swap], ids[idx]];
+      await AS.api('/api/admin/proof/reorder', { method: 'POST', body: { ids } });
+      loadProof();
+    };
+    el('panel-proof').querySelectorAll('[data-up]').forEach((b) => b.addEventListener('click', () => reorder(b.dataset.up, -1)));
+    el('panel-proof').querySelectorAll('[data-down]').forEach((b) => b.addEventListener('click', () => reorder(b.dataset.down, 1)));
+  }
+
+  function openProofEdit(item) {
+    if (!item) return;
+    editingProof = item;
+    el('pm-cat').innerHTML = proofCats.map((c) => `<option value="${c.key}" ${c.key === item.category ? 'selected' : ''}>${AS.escapeHtml(c.label)}</option>`).join('');
+    el('pm-name').value = item.title;
+    el('pm-caption').value = item.caption || '';
+    el('pm-order').value = item.sortOrder;
+    el('pm-alert').className = 'alert';
+    el('proof-modal').classList.add('open');
+  }
+
+  /* ---------- reviews ---------- */
+  async function loadReviews() {
+    el('panel-reviews').innerHTML = '<div class="loading-box"><div class="spinner"></div></div>';
+    const { reviews } = await AS.api('/api/admin/reviews');
+    if (!reviews.length) {
+      el('panel-reviews').innerHTML = `<div class="empty"><div class="empty-icon">⭐</div><h3>No reviews yet</h3>
+        <p>Reviews appear here only when a streamer with a completed order submits one.</p></div>`;
+      return;
+    }
+    el('panel-reviews').innerHTML = reviews.map((r) => `
+      <div class="card" style="margin-bottom:13px">
+        <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px">
+          <div>
+            <div class="stars">${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}</div>
+            <small style="color:var(--text-3)">${AS.escapeHtml(r.reviewerName)} · ${AS.escapeHtml(r.productName || '')} · ${AS.escapeHtml(r.orderReference)} · ${AS.formatDate(r.createdAt)}</small>
+          </div>
+          <span class="pill ${r.isPublished ? 'pill-completed' : 'pill-cancelled'}">${r.isPublished ? 'Published' : 'Hidden'}</span>
+        </div>
+        ${r.body ? `<p style="font-size:.93rem;margin:0 0 12px">${AS.escapeHtml(r.body)}</p>` : ''}
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-sm btn-ghost" data-toggle="${r.id}" data-state="${r.isPublished}">${r.isPublished ? 'Hide' : 'Publish'}</button>
+          <button class="btn btn-sm btn-danger" data-delr="${r.id}">Delete</button>
+        </div>
+      </div>`).join('');
+
+    el('panel-reviews').querySelectorAll('[data-toggle]').forEach((b) => b.addEventListener('click', async () => {
+      await AS.api('/api/admin/reviews/' + b.dataset.toggle, { method: 'PATCH', body: { isPublished: b.dataset.state !== 'true' } });
+      loadReviews();
+    }));
+    el('panel-reviews').querySelectorAll('[data-delr]').forEach((b) => b.addEventListener('click', async () => {
+      if (!confirm('Delete this review permanently?')) return;
+      await AS.api('/api/admin/reviews/' + b.dataset.delr, { method: 'DELETE' });
+      loadReviews(); loadOverview();
+    }));
+  }
+
+  /* ---------- products ---------- */
+  async function loadProducts() {
+    el('panel-products').innerHTML = '<div class="loading-box"><div class="spinner"></div></div>';
+    const { products } = await AS.api('/api/admin/products');
+    el('panel-products').innerHTML = `
+      <p class="hint" style="margin-bottom:14px">Prices are fixed as configured. You can temporarily hide a strategy from the public catalog.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Strategy</th><th>Price</th><th>Type</th><th>Status</th><th></th></tr></thead>
+        <tbody>${products.map((p) => `<tr>
+          <td><strong>${AS.escapeHtml(p.name)}</strong>${p.priceNote ? `<br><small style="color:var(--text-3)">${AS.escapeHtml(p.priceNote)}</small>` : ''}</td>
+          <td><strong>${AS.money(p.price)}</strong></td>
+          <td>${AS.escapeHtml(p.tier)}</td>
+          <td><span class="pill ${p.isActive ? 'pill-completed' : 'pill-cancelled'}">${p.isActive ? 'Active' : 'Hidden'}</span></td>
+          <td><button class="btn btn-sm btn-ghost" data-prod="${p.id}" data-state="${p.isActive}">${p.isActive ? 'Hide' : 'Show'}</button></td>
+        </tr>`).join('')}</tbody></table></div>`;
+
+    el('panel-products').querySelectorAll('[data-prod]').forEach((b) => b.addEventListener('click', async () => {
+      await AS.api('/api/admin/products/' + b.dataset.prod, { method: 'PATCH', body: { isActive: b.dataset.state !== 'true' } });
+      loadProducts();
+    }));
+  }
+
+  /* ---------- contact ---------- */
+  async function loadContact() {
+    el('panel-contact').innerHTML = '<div class="loading-box"><div class="spinner"></div></div>';
+    const { messages } = await AS.api('/api/admin/contact');
+    if (!messages.length) {
+      el('panel-contact').innerHTML = '<div class="empty"><div class="empty-icon">📨</div><h3>No contact messages</h3></div>';
+      return;
+    }
+    el('panel-contact').innerHTML = messages.map((m) => `
+      <div class="card" style="margin-bottom:13px">
+        <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <strong>${AS.escapeHtml(m.name)}</strong>
+          <small style="color:var(--text-3)">${AS.formatDateTime(m.created_at)}</small>
+        </div>
+        <small style="color:var(--text-3)">${AS.escapeHtml(m.email)}${m.subject ? ' · ' + AS.escapeHtml(m.subject) : ''}</small>
+        <p style="margin:10px 0 0;font-size:.93rem;white-space:pre-line">${AS.escapeHtml(m.body)}</p>
+      </div>`).join('');
+  }
+
+  /* ---------- panels ---------- */
+  const LOADERS = {
+    overview: loadOverview, orders: loadOrders, payments: loadPayments, customers: loadCustomers,
+    proof: loadProof, reviews: loadReviews, products: loadProducts, contact: loadContact,
+  };
+
+  function switchPanel(name) {
+    document.querySelectorAll('#admin-nav button').forEach((b) => b.classList.toggle('active', b.dataset.panel === name));
+    document.querySelectorAll('.tab-panel').forEach((p) => p.classList.toggle('active', p.id === 'panel-' + name));
+    history.replaceState(null, '', '#' + name);
+    if (LOADERS[name]) LOADERS[name]().catch((e) => AS.toast(e.message, 'error'));
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    AS.boot({ after: async () => {
+      me = await AS.getUser();
+      if (!me) { window.location.href = '/access?next=/admin'; return; }
+
+      // Server-side protection is authoritative; this is only a friendly message.
+      if (me.role !== 'owner') {
+        el('admin-gate').innerHTML = `<div class="empty">
+          <div class="empty-icon">🔒</div><h3>Owner access only</h3>
+          <p>This dashboard is restricted to the owner account. Your account does not have owner access.</p>
+          <a href="/dashboard" class="btn btn-primary" style="margin-top:16px">Go to my dashboard</a></div>`;
+        return;
+      }
+
+      el('admin-gate').style.display = 'none';
+      el('admin-body').style.display = '';
+
+      const hash = location.hash.replace('#', '').split('-')[0];
+      const panel = Object.keys(LOADERS).includes(hash) ? hash : 'overview';
+      switchPanel(panel);
+      if (panel !== 'overview') loadOverview();
+
+      const s = AS.socket();
+      if (s) s.on('notification', () => loadOverview());
+    }});
+
+    document.querySelectorAll('#admin-nav button').forEach((b) =>
+      b.addEventListener('click', () => switchPanel(b.dataset.panel)));
+
+    el('pm-close').addEventListener('click', () => el('proof-modal').classList.remove('open'));
+    el('pm-cancel').addEventListener('click', () => el('proof-modal').classList.remove('open'));
+    el('pm-save').addEventListener('click', async () => {
+      const a = el('pm-alert'); a.className = 'alert';
+      try {
+        await AS.api('/api/admin/proof/' + editingProof.id, { method: 'PATCH', body: {
+          category: el('pm-cat').value,
+          title: el('pm-name').value,
+          caption: el('pm-caption').value,
+          sortOrder: parseInt(el('pm-order').value, 10) || 0,
+        }});
+        el('proof-modal').classList.remove('open');
+        AS.toast('Proof updated.', 'success');
+        loadProof();
+      } catch (err) { a.className = 'alert alert-error show'; a.textContent = err.message; }
+    });
+
+    el('lb-close').addEventListener('click', () => el('lightbox').classList.remove('open'));
+    el('lightbox').addEventListener('click', (e) => { if (e.target.id === 'lightbox') el('lightbox').classList.remove('open'); });
+  });
+})();
+</script>
+</body>
+</html>
