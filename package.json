@@ -3,18 +3,18 @@
   "version": "1.0.0",
   "private": true,
   "description": "Agbota Segun — Creator & Streamer Growth Strategy store (full-stack: Express + PostgreSQL + Socket.IO)",
-  "main": "src/server.js",
+  "main": "server.js",
   "type": "commonjs",
   "engines": {
     "node": ">=20"
   },
-  "scripts": {
-   "start": "node server.js"
-    "dev": "node src/server.js",
-    "migrate": "node src/db/migrate.js",
-    "seed": "node src/db/seed.js",
-    "test": "node tests/run-tests.js"
-  },
+"scripts": {
+  "start": "node server.js",
+  "dev": "node server.js",
+  "migrate": "node migrate.js",
+  "seed": "node seed.js",
+  "test": "node run-tests.js"
+},
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.6",
