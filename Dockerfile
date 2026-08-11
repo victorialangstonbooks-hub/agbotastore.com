@@ -18,4 +18,4 @@ USER app
 EXPOSE 10000
 
 # Render provides PORT; the server binds 0.0.0.0 and reads process.env.PORT.
-"start": "node src/server.js"
+CMD ["node", "server.js"]
